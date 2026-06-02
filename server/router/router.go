@@ -25,7 +25,8 @@ func Setup() *gin.Engine {
 	api := r.Group("/api")
 	{
 		api.GET("/public/settings", handler.GetPublicSettings)
-	api.GET("/public/version", handler.GetVersion)
+		api.GET("/public/version", handler.GetVersion)
+		api.GET("/public/system-info", handler.GetPublicSystemInfo)
 
 		// ==================== 认证（无需登录） ====================
 		auth := api.Group("/auth")

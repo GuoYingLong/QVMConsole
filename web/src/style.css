@@ -1,10 +1,43 @@
-/* 覆盖 Vite 默认样式，允许全屏 */
+/* ========== 设计系统变量 ========== */
+:root {
+  --app-bg-page: #f0f2f5;
+  --app-bg-card: #ffffff;
+  --app-bg-elevated: #ffffff;
+  --app-bg-hover: rgba(64, 158, 255, 0.04);
+  --app-border-light: #ebeef5;
+  --app-border-extralight: #f2f3f5;
+  --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --app-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --app-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08);
+  --app-shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --app-radius-sm: 6px;
+  --app-radius-md: 10px;
+  --app-radius-lg: 14px;
+  --app-transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  --app-transition-base: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --app-transition-slow: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  --app-gradient-primary: linear-gradient(135deg, var(--el-color-primary) 0%, var(--el-color-primary-light-3) 100%);
+  --app-gradient-subtle: linear-gradient(180deg, rgba(64, 158, 255, 0.02) 0%, rgba(64, 158, 255, 0) 100%);
+  --app-navbar-blur: blur(12px);
+  --app-content-max-width: 1600px;
+}
 
 html.dark {
-  --el-text-color-primary: #b4b8bf;
-  --el-text-color-regular: #8f9399;
-  --el-text-color-secondary: #73767a;
+  --el-text-color-primary: #e0e3e8;
+  --el-text-color-regular: #a3a6ad;
+  --el-text-color-secondary: #7d8188;
   --el-text-color-placeholder: #5c5e61;
+  --app-bg-page: #141417;
+  --app-bg-card: #1e1e22;
+  --app-bg-elevated: #26262c;
+  --app-bg-hover: rgba(64, 158, 255, 0.08);
+  --app-border-light: #333338;
+  --app-border-extralight: #2a2a2f;
+  --app-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --app-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.24);
+  --app-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --app-shadow-xl: 0 8px 24px rgba(0, 0, 0, 0.32);
+  --app-gradient-subtle: linear-gradient(180deg, rgba(64, 158, 255, 0.04) 0%, rgba(64, 158, 255, 0) 100%);
 }
 
 /* ===== VmForm 对话框全局移动端适配 ===== */
@@ -557,4 +590,135 @@ html.dark {
   .hide-on-xs {
     display: none !important;
   }
+}
+
+/* ========== 全局交互增强 ========== */
+
+/* 卡片默认过渡动画 */
+.el-card {
+  transition: transform var(--app-transition-fast), box-shadow var(--app-transition-fast), border-color var(--app-transition-fast);
+  border: 1px solid var(--app-border-light, var(--el-border-color-lighter));
+}
+
+.el-card[shadow="hover"]:hover {
+  box-shadow: var(--app-shadow-lg, 0 4px 16px rgba(0,0,0,0.08));
+}
+
+/* 按钮聚焦态增强 */
+.el-button:focus-visible {
+  outline: 2px solid var(--el-color-primary-light-3);
+  outline-offset: 2px;
+}
+
+/* 标签页导航增强 */
+.el-tabs__header {
+  margin-bottom: 20px;
+}
+
+.el-tabs__nav-wrap::after {
+  height: 1px;
+  background: var(--app-border-light, var(--el-border-color-lighter));
+}
+
+/* 表格行悬浮增强 */
+.el-table tbody tr {
+  transition: background-color var(--app-transition-fast);
+}
+
+/* 输入框聚焦增强 */
+.el-input__wrapper,
+.el-textarea__inner {
+  transition: box-shadow var(--app-transition-fast), border-color var(--app-transition-fast);
+}
+
+/* 分页器圆角增强 */
+.el-pagination .el-pager li {
+  border-radius: var(--app-radius-sm, 6px);
+  transition: all var(--app-transition-fast);
+}
+
+.el-pagination .el-pager li.is-active {
+  background: var(--el-color-primary);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.3);
+}
+
+/* Tag 标签增强 */
+.el-tag {
+  border-radius: 6px;
+  transition: all var(--app-transition-fast);
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.25);
+  border-radius: 3px;
+  transition: background var(--app-transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.4);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(144, 147, 153, 0.2);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(144, 147, 153, 0.35);
+}
+
+/* ========== 通用页面结构增强 ========== */
+
+/* 统一页面标题样式 */
+h2 {
+  letter-spacing: -0.01em;
+  line-height: 1.4;
+}
+
+/* 操作栏样式统一 */
+.filter-bar,
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* 分页容器统一样式 */
+.pagination-wrap {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* 对话框全局增强 */
+.el-dialog {
+  border-radius: var(--app-radius-lg, 14px) !important;
+  overflow: hidden;
+}
+
+.el-dialog__header {
+  border-bottom: 1px solid var(--app-border-extralight, var(--el-border-color-extra-light));
+  padding-bottom: 16px;
+}
+
+.el-dialog__title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+/* 选中态文本增强 */
+::selection {
+  background: rgba(64, 158, 255, 0.15);
+  color: inherit;
 }

@@ -20,6 +20,14 @@ export function getPublicVersion() {
   })
 }
 
+// 获取公开的系统运行环境信息
+export function getPublicSystemInfo() {
+  return request({
+    url: '/public/system-info',
+    method: 'get'
+  })
+}
+
 // 获取系统设置
 export function getSettings(token = '') {
   return request({

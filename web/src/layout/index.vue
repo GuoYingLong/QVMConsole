@@ -867,10 +867,11 @@ const handleCommand = (command) => {
   width: 100%;
 }
 
+/* ===== 侧边栏优化 ===== */
 .sidebar {
   background-color: var(--el-bg-color-overlay);
-  border-right: 1px solid var(--el-border-color-light);
-  transition: width 0.28s, transform 0.28s;
+  border-right: 1px solid var(--app-border-light, var(--el-border-color-light));
+  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1), transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
   overflow-x: hidden;
   overflow-y: auto;
   z-index: 1001;
@@ -885,6 +886,11 @@ const handleCommand = (command) => {
   font-size: 20px;
   color: var(--el-text-color-regular);
   display: none;
+  transition: color var(--app-transition-fast, 0.15s ease);
+}
+
+.mobile-sidebar-close:hover {
+  color: var(--el-text-color-primary);
 }
 
 .logo {
@@ -893,13 +899,14 @@ const handleCommand = (command) => {
   text-align: center;
   color: var(--el-text-color-primary);
   font-size: 16px;
-  font-weight: bold;
+  font-weight: 700;
   background-color: var(--el-bg-color-overlay);
-  border-bottom: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid var(--app-border-light, var(--el-border-color-light));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   position: relative;
+  letter-spacing: -0.01em;
 }
 
 .el-menu-vertical {
@@ -924,74 +931,141 @@ const handleCommand = (command) => {
   visibility: visible !important;
 }
 
+/* ===== 主容器优化 ===== */
 .main-container {
   display: flex;
   flex-direction: column;
+  background-color: var(--app-bg-page, var(--el-bg-color-page));
 }
 
+/* ===== 导航栏 - 玻璃态效果 ===== */
 .navbar {
   height: 60px;
-  background-color: var(--el-bg-color);
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: var(--app-navbar-blur, blur(12px));
+  -webkit-backdrop-filter: var(--app-navbar-blur, blur(12px));
+  border-bottom: 1px solid var(--app-border-light, var(--el-border-color-light));
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  padding: 0 24px;
   z-index: 999;
+  position: sticky;
+  top: 0;
+  transition: background var(--app-transition-base, 0.25s ease);
 }
 
+html.dark .navbar {
+  background: rgba(30, 30, 34, 0.88);
+}
+
+/* ===== 导航栏左侧 ===== */
 .left-menu {
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .fold-btn {
   font-size: 20px;
   cursor: pointer;
   margin-right: 16px;
-  color: var(--el-text-color-primary);
+  color: var(--el-text-color-regular);
+  transition: color var(--app-transition-fast, 0.15s ease), transform var(--app-transition-fast, 0.15s ease);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.fold-btn:hover {
+  color: var(--el-color-primary);
+  background: var(--app-bg-hover, rgba(64, 158, 255, 0.04));
 }
 
 .page-title {
   font-size: 16px;
   font-weight: 600;
   color: var(--el-text-color-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== 导航栏右侧 ===== */
+.right-menu {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .user-info {
   display: flex;
   align-items: center;
   cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background var(--app-transition-fast, 0.15s ease);
+}
+
+.user-info:hover {
+  background: var(--app-bg-hover, rgba(64, 158, 255, 0.04));
 }
 
 .username {
   margin-left: 8px;
   font-size: 14px;
-  color: var(--el-text-color-regular);
+  font-weight: 500;
+  color: var(--el-text-color-primary);
 }
 
+/* ===== 主内容区优化 ===== */
 .app-main {
-  padding: 20px;
-  background-color: var(--el-bg-color-page);
+  padding: 24px;
+  background-color: var(--app-bg-page, var(--el-bg-color-page));
   overflow-y: auto;
   flex: 1 1 0%;
   min-height: 0;
+  position: relative;
 }
 
+/* 内容区顶部微妙渐变，增强层次感 */
+.app-main::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 80px;
+  background: var(--app-gradient-subtle, linear-gradient(180deg, rgba(64, 158, 255, 0.02) 0%, transparent 100%));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.app-main > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ===== 页面过渡动画 ===== */
 .fade-transform-enter-active,
 .fade-transform-leave-active {
-  transition: all 0.3s;
-}
-.fade-transform-enter-from {
-  opacity: 0;
-  transform: translateX(-30px);
-}
-.fade-transform-leave-to {
-  opacity: 0;
-  transform: translateX(30px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* 安全设置对话框样式 */
+.fade-transform-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.fade-transform-leave-to {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* ===== 安全设置对话框优化 ===== */
 .security-tabs {
   margin-top: -10px;
 }
@@ -1010,6 +1084,9 @@ const handleCommand = (command) => {
   color: var(--el-text-color-secondary);
   font-size: 12px;
   line-height: 1.6;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .totp-actions {
@@ -1020,27 +1097,30 @@ const handleCommand = (command) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 20px;
+  padding: 24px;
   background: var(--el-fill-color-light);
-  border-radius: 14px;
+  border-radius: var(--app-radius-lg, 14px);
+  border: 1px solid var(--app-border-extralight, var(--el-border-color-extra-light));
 }
 
 .qr-image {
   width: 180px;
   height: 180px;
   padding: 10px;
-  border-radius: 14px;
+  border-radius: var(--app-radius-lg, 14px);
   background: #fff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--app-shadow-lg, 0 8px 18px rgba(15, 23, 42, 0.08));
 }
 
 .totp-secret {
   margin: 14px 0 10px;
   color: var(--el-text-color-primary);
   word-break: break-all;
+  font-family: 'SF Mono', SFMono-Regular, Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
 }
 
-/* 移动端适配 */
+/* ===== 移动端适配 ===== */
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;
@@ -1048,7 +1128,7 @@ const handleCommand = (command) => {
     left: 0;
     top: 0;
     transform: translateX(-100%);
-    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.12);
   }
 
   .sidebar.mobile-show {
@@ -1065,7 +1145,9 @@ const handleCommand = (command) => {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
     z-index: 1000;
   }
 
@@ -1073,9 +1155,8 @@ const handleCommand = (command) => {
     margin-left: 0;
   }
 
-  /* 导航栏移动端紧凑 */
   .navbar {
-    padding: 0 12px !important;
+    padding: 0 14px !important;
     height: 52px !important;
   }
 
@@ -1094,9 +1175,17 @@ const handleCommand = (command) => {
   .cloud-tag {
     margin-right: 8px;
   }
+
+  .app-main {
+    padding: 14px;
+  }
+
+  .right-menu {
+    gap: 2px;
+  }
 }
 
-/* 异步任务面板导航栏入口 */
+/* ===== 异步任务面板导航栏入口 ===== */
 .task-badge :deep(.el-badge__content) {
   top: 4px;
   right: 8px;
@@ -1105,10 +1194,16 @@ const handleCommand = (command) => {
 .task-toggle-btn {
   font-size: 18px;
   color: var(--el-text-color-regular);
+  transition: color var(--app-transition-fast, 0.15s ease);
+  display: flex;
+  align-items: center;
+  padding: 4px;
+  border-radius: 6px;
 }
 
 .task-toggle-btn:hover {
   color: var(--el-color-primary);
+  background: var(--app-bg-hover, rgba(64, 158, 255, 0.04));
 }
 
 /* 异步任务面板隐藏（未登录时） */
