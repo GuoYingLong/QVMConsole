@@ -1,0 +1,862 @@
+package handler
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
+
+	"kvm_console/middleware"
+	"kvm_console/model"
+	"kvm_console/service"
+)
+
+type LoginRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type LoginStageResponse struct {
+	Stage          string                `json:"stage"`
+	Token          string                `json:"token,omitempty"`
+	Username       string                `json:"username"`
+	Role           string                `json:"role"`
+	CloudType      string                `json:"cloud_type"`
+	Security       service.SecurityState `json:"security"`
+	AllowedMethods []string              `json:"allowed_methods,omitempty"`
+}
+
+type ChangePasswordRequest struct {
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required"`
+}
+
+type ChangeUsernameRequest struct {
+	NewUsername string `json:"new_username" binding:"required"`
+	Password    string `json:"password" binding:"required"`
+}
+
+type EmailCodeSendRequest struct {
+	Email string `json:"email"`
+}
+
+type EmailBindRequest struct {
+	Email       string `json:"email" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	ChallengeID uint   `json:"challenge_id" binding:"required"`
+}
+
+type LoginVerifyRequest struct {
+	Method      string `json:"method" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	ChallengeID uint   `json:"challenge_id"`
+}
+
+type TOTPEnableRequest struct {
+	Secret string `json:"secret" binding:"required"`
+	Code   string `json:"code" binding:"required"`
+}
+
+type TOTPDisableRequest struct {
+	Password string `json:"password" binding:"required"`
+	Code     string `json:"code" binding:"required"`
+}
+
+type HighRiskVerifyRequest struct {
+	Method      string `json:"method" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	ChallengeID uint   `json:"challenge_id"`
+	Operation   string `json:"operation" binding:"required"`
+}
+
+type InviteCompleteRequest struct {
+	Token           string `json:"token" binding:"required"`
+	Password        string `json:"password" binding:"required"`
+	ConfirmPassword string `json:"confirm_password" binding:"required"`
+}
+
+type PasswordForgotRequest struct {
+	Email string `json:"email" binding:"required"`
+}
+
+type PasswordForgotVerifyRequest struct {
+	Email       string `json:"email" binding:"required"`
+	Code        string `json:"code" binding:"required"`
+	ChallengeID uint   `json:"challenge_id" binding:"required"`
+}
+
+type PasswordForgotSelectRequest struct {
+	SelectionToken string `json:"selection_token" binding:"required"`
+	Username       string `json:"username" binding:"required"`
+}
+
+type PasswordResetRequest struct {
+	Token           string `json:"token" binding:"required"`
+	Password        string `json:"password" binding:"required"`
+	ConfirmPassword string `json:"confirm_password" binding:"required"`
+}
+
+// Login 用户登录
+func Login(c *gin.Context) {
+	var req LoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入用户名和密码"})
+		return
+	}
+
+	var user model.User
+	if err := model.DB.Where("username = ?", strings.TrimSpace(req.Username)).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "用户名或密码错误"})
+		return
+	}
+	if user.Status == service.UserStatusPendingInvite {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "该账户尚未完成注册，请先完成邀请注册"})
+		return
+	}
+	if user.Status == service.UserStatusDisabled {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "该账户已被禁用"})
+		return
+	}
+	if strings.TrimSpace(user.PasswordHash) == "" || bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "用户名或密码错误"})
+		return
+	}
+
+	security := service.BuildSecurityState(&user)
+	if service.CanEnterBootstrap(&user) {
+		token, err := middleware.GenerateTokenWithTTL(user.ID, user.Username, user.Role, service.TokenTypeBootstrap, 30*time.Minute)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成引导令牌失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "请先完成安全初始化",
+			"data": LoginStageResponse{
+				Stage:     "bootstrap_security",
+				Token:     token,
+				Username:  user.Username,
+				Role:      user.Role,
+				CloudType: service.NormalizeCloudType(user.CloudType),
+				Security:  security,
+			},
+		})
+		return
+	}
+
+	if service.NeedsLoginVerification(&user) {
+		token, err := middleware.GenerateTokenWithTTL(user.ID, user.Username, user.Role, service.TokenTypeLogin, 15*time.Minute)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成登录验证令牌失败"})
+			return
+		}
+
+		allowedMethods := []string{service.ChallengeMethodEmail}
+		if user.Role == "admin" {
+			allowedMethods = []string{service.ChallengeMethodTOTP}
+		} else if user.TOTPEnabled {
+			allowedMethods = []string{service.ChallengeMethodTOTP, service.ChallengeMethodEmail}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "请完成登录验证",
+			"data": LoginStageResponse{
+				Stage:          "login_verify",
+				Token:          token,
+				Username:       user.Username,
+				Role:           user.Role,
+				CloudType:      service.NormalizeCloudType(user.CloudType),
+				Security:       security,
+				AllowedMethods: allowedMethods,
+			},
+		})
+		return
+	}
+
+	accessToken, err := middleware.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成 Token 失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "登录成功",
+		"data": LoginStageResponse{
+			Stage:     "success",
+			Token:     accessToken,
+			Username:  user.Username,
+			Role:      user.Role,
+			CloudType: service.NormalizeCloudType(user.CloudType),
+			Security:  security,
+		},
+	})
+}
+
+// GetUserInfo 获取当前登录用户信息
+func GetUserInfo(c *gin.Context) {
+	user := getCurrentUser(c)
+	security := service.BuildSecurityState(user)
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "ok",
+		"data": gin.H{
+			"id":         user.ID,
+			"username":   user.Username,
+			"role":       user.Role,
+			"cloud_type": service.NormalizeCloudType(user.CloudType),
+			"security":   security,
+		},
+	})
+}
+
+// ChangePassword 修改当前用户密码
+func ChangePassword(c *gin.Context) {
+	if !requireHighRiskVerification(c, "change_password") {
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入旧密码和新密码"})
+		return
+	}
+	if err := service.ValidateStrongPassword(req.NewPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	user := getCurrentUser(c)
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "旧密码错误"})
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "密码加密失败"})
+		return
+	}
+
+	now := time.Now()
+	if err := model.DB.Model(user).Updates(map[string]interface{}{
+		"password_hash":            string(newHash),
+		"high_risk_verified_until": nil,
+		"login_verified_until":     nil,
+		"security_updated_at":      &now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "密码更新失败"})
+		return
+	}
+	if user.Role == "user" {
+		if err := service.SyncUserPassword(user.Username, req.NewPassword); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "密码修改成功，请重新登录"})
+}
+
+// ChangeUsername 修改当前用户用户名
+func ChangeUsername(c *gin.Context) {
+	var req ChangeUsernameRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入新用户名和密码"})
+		return
+	}
+	newUsername := strings.TrimSpace(req.NewUsername)
+	if len(newUsername) < 3 || len(newUsername) > 32 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "用户名长度必须在3-32个字符之间"})
+		return
+	}
+
+	user := getCurrentUser(c)
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "密码验证失败"})
+		return
+	}
+
+	var existing model.User
+	if err := model.DB.Where("username = ? AND id != ?", newUsername, user.ID).First(&existing).Error; err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "该用户名已被使用"})
+		return
+	}
+
+	now := time.Now()
+	if err := model.DB.Model(user).Updates(map[string]interface{}{
+		"username":            newUsername,
+		"security_updated_at": &now,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "用户名更新失败"})
+		return
+	}
+
+	newToken, err := middleware.GenerateToken(user.ID, newUsername, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "用户名已更新，但 Token 生成失败，请重新登录"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "用户名修改成功",
+		"data": gin.H{
+			"token":    newToken,
+			"username": newUsername,
+		},
+	})
+}
+
+// SendLoginEmailCode 发送登录邮箱验证码
+func SendLoginEmailCode(c *gin.Context) {
+	user := getCurrentUser(c)
+	if user.Role == "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "管理员登录仅支持 2FA 验证"})
+		return
+	}
+	if user.EmailVerifiedAt == nil || strings.TrimSpace(user.Email) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "当前账号尚未绑定邮箱"})
+		return
+	}
+	challenge, err := service.IssueEmailChallenge(
+		user,
+		service.ChallengePurposeLoginEmail,
+		user.Email,
+		"登录验证",
+		"您正在进行账户登录验证，请输入以下验证码完成登录。",
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "发送验证码失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "验证码已发送",
+		"data": gin.H{
+			"challenge_id": challenge.ID,
+			"masked_email": service.MaskEmail(user.Email),
+			"expires_in":   int(service.EmailCodeTTL.Seconds()),
+		},
+	})
+}
+
+// VerifyLoginStage 完成登录期验证
+func VerifyLoginStage(c *gin.Context) {
+	var req LoginVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+
+	user := getCurrentUser(c)
+	method := strings.TrimSpace(req.Method)
+	switch method {
+	case service.ChallengeMethodTOTP:
+		secret, err := service.GetUserTOTPSecret(user)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+		if err := service.ValidateTOTPCode(secret, req.Code); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+	case service.ChallengeMethodEmail:
+		if user.Role == "admin" {
+			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "管理员登录仅支持 2FA 验证"})
+			return
+		}
+		if _, err := service.VerifyEmailChallenge(user.ID, req.ChallengeID, service.ChallengePurposeLoginEmail, req.Code); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "不支持的验证方式"})
+		return
+	}
+
+	if user.Role == "user" {
+		if err := service.UpdateLoginVerificationWindow(user.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "刷新登录验证状态失败"})
+			return
+		}
+	}
+	accessToken, err := middleware.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成访问令牌失败"})
+		return
+	}
+
+	state, _, err := service.GetSecurityStateByUserID(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "登录验证成功",
+		"data": LoginStageResponse{
+			Stage:     "success",
+			Token:     accessToken,
+			Username:  user.Username,
+			Role:      user.Role,
+			CloudType: service.NormalizeCloudType(user.CloudType),
+			Security:  *state,
+		},
+	})
+}
+
+// SendEmailCode 发送邮箱绑定验证码
+func SendEmailCode(c *gin.Context) {
+	var req EmailCodeSendRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	if !service.IsSMTPConfigured() {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "SMTP 尚未配置，暂时无法发送邮件"})
+		return
+	}
+	user := getCurrentUser(c)
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if email == "" {
+		email = user.Email
+	}
+	challenge, err := service.IssueEmailChallenge(
+		user,
+		service.ChallengePurposeBindEmail,
+		email,
+		"邮箱绑定验证",
+		"您正在进行邮箱绑定或换绑，请输入以下验证码完成验证。",
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "发送验证码失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "验证码已发送",
+		"data": gin.H{
+			"challenge_id": challenge.ID,
+			"masked_email": service.MaskEmail(email),
+			"expires_in":   int(service.EmailCodeTTL.Seconds()),
+		},
+	})
+}
+
+// BindEmail 绑定或更新邮箱
+func BindEmail(c *gin.Context) {
+	var req EmailBindRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	user := getCurrentUser(c)
+	challenge, err := service.VerifyEmailChallenge(user.ID, req.ChallengeID, service.ChallengePurposeBindEmail, req.Code)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(challenge.Target), strings.TrimSpace(req.Email)) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "邮箱地址与验证码目标不一致"})
+		return
+	}
+
+	now := time.Now()
+	if err := service.BindUserEmail(user.ID, req.Email, now); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "绑定邮箱失败: " + err.Error()})
+		return
+	}
+	if user.Role == "user" {
+		_ = service.UpdateLoginVerificationWindow(user.ID)
+	}
+
+	state, freshUser, err := service.GetSecurityStateByUserID(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+	tokenType, _ := c.Get("token_type")
+	if tokenType == service.TokenTypeBootstrap && !service.CanEnterBootstrap(freshUser) {
+		accessToken, err := middleware.GenerateToken(freshUser.ID, freshUser.Username, freshUser.Role)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成访问令牌失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "邮箱绑定成功",
+			"data": LoginStageResponse{
+				Stage:     "success",
+				Token:     accessToken,
+				Username:  freshUser.Username,
+				Role:      freshUser.Role,
+				CloudType: service.NormalizeCloudType(freshUser.CloudType),
+				Security:  *state,
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "邮箱绑定成功",
+		"data":    gin.H{"security": state},
+	})
+}
+
+// SetupTOTP 生成 2FA 配置
+func SetupTOTP(c *gin.Context) {
+	user := getCurrentUser(c)
+	setupInfo, err := service.GenerateTOTPSetup(user.Username)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成 2FA 配置失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "ok", "data": setupInfo})
+}
+
+// EnableTOTP 启用 2FA
+func EnableTOTP(c *gin.Context) {
+	var req TOTPEnableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	if err := service.ValidateTOTPCode(req.Secret, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	user := getCurrentUser(c)
+	if err := service.EnableUserTOTP(user.ID, req.Secret); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "启用 2FA 失败: " + err.Error()})
+		return
+	}
+
+	state, freshUser, err := service.GetSecurityStateByUserID(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+	tokenType, _ := c.Get("token_type")
+	if tokenType == service.TokenTypeBootstrap && freshUser.Role == "admin" {
+		accessToken, err := middleware.GenerateToken(freshUser.ID, freshUser.Username, freshUser.Role)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成访问令牌失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "2FA 绑定成功",
+			"data": LoginStageResponse{
+				Stage:     "success",
+				Token:     accessToken,
+				Username:  freshUser.Username,
+				Role:      freshUser.Role,
+				CloudType: service.NormalizeCloudType(freshUser.CloudType),
+				Security:  *state,
+			},
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "2FA 绑定成功", "data": gin.H{"security": state}})
+}
+
+// DisableTOTP 关闭 2FA
+func DisableTOTP(c *gin.Context) {
+	var req TOTPDisableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	user := getCurrentUser(c)
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "密码错误"})
+		return
+	}
+	secret, err := service.GetUserTOTPSecret(user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	if err := service.ValidateTOTPCode(secret, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	if err := service.DisableUserTOTP(user.ID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "关闭 2FA 失败"})
+		return
+	}
+	state, _, err := service.GetSecurityStateByUserID(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "2FA 已关闭", "data": gin.H{"security": state}})
+}
+
+// VerifyHighRisk 完成高风险验证
+func VerifyHighRisk(c *gin.Context) {
+	var req HighRiskVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	user := getCurrentUser(c)
+	method := strings.TrimSpace(req.Method)
+	switch method {
+	case service.ChallengeMethodTOTP:
+		secret, err := service.GetUserTOTPSecret(user)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+		if err := service.ValidateTOTPCode(secret, req.Code); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+		if err := service.GrantHighRiskVerificationTrust(user.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "写入高风险信任状态失败"})
+			return
+		}
+		token, err := middleware.GenerateTokenWithOperation(user.ID, user.Username, user.Role, service.TokenTypeHighRisk, req.Operation, 5*time.Minute)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成高风险令牌失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "高风险验证成功",
+			"data": gin.H{
+				"verification_token": token,
+				"trusted_until":      time.Now().Add(service.HighRiskEmailTrustWindow).Format(time.RFC3339),
+			},
+		})
+	case service.ChallengeMethodEmail:
+		if _, err := service.VerifyEmailChallenge(user.ID, req.ChallengeID, service.ChallengePurposeHighRiskEmail, req.Code); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+		if err := service.GrantHighRiskVerificationTrust(user.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "写入高风险信任状态失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "邮箱验证成功",
+			"data":    gin.H{"trusted_until": time.Now().Add(service.HighRiskEmailTrustWindow).Format(time.RFC3339)},
+		})
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "不支持的验证方式"})
+	}
+}
+
+// GetInviteInfo 获取邀请详情
+func GetInviteInfo(c *gin.Context) {
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "邀请令牌不能为空"})
+		return
+	}
+	detail, _, _, err := service.BuildInviteDetail(token)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "ok", "data": detail})
+}
+
+// CompleteInvite 完成邀请注册
+func CompleteInvite(c *gin.Context) {
+	var req InviteCompleteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	if req.Password != req.ConfirmPassword {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "两次输入的密码不一致"})
+		return
+	}
+	user, err := service.CompleteInviteRegistration(req.Token, req.Password)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	accessToken, err := middleware.GenerateToken(user.ID, user.Username, user.Role)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "注册成功，但自动登录失败"})
+		return
+	}
+	state := service.BuildSecurityState(user)
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "注册完成",
+		"data": LoginStageResponse{
+			Stage:     "success",
+			Token:     accessToken,
+			Username:  user.Username,
+			Role:      user.Role,
+			CloudType: service.NormalizeCloudType(user.CloudType),
+			Security:  state,
+		},
+	})
+}
+
+// ForgotPassword 发送找回密码邮件
+func ForgotPassword(c *gin.Context) {
+	var req PasswordForgotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入邮箱"})
+		return
+	}
+	if !service.IsSMTPConfigured() {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "SMTP 尚未配置，无法找回密码"})
+		return
+	}
+	user, token, err := service.CreatePasswordResetToken(req.Email)
+	if err == nil {
+		resetURL := buildBaseURL(c) + "/reset-password?token=" + token
+		_ = service.SendPasswordResetEmail(user, resetURL)
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "如果邮箱对应账号存在，系统已发送找回密码邮件"})
+}
+
+// ForgotPasswordSendCode 发送忘记密码验证码
+func ForgotPasswordSendCode(c *gin.Context) {
+	var req PasswordForgotRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入邮箱"})
+		return
+	}
+	if !service.IsSMTPConfigured() {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "SMTP 尚未配置，无法发送验证码"})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	challenge, err := service.IssuePublicEmailChallenge(
+		service.ChallengePurposePasswordForgot,
+		email,
+		"找回密码验证",
+		"您正在进行忘记密码验证，请输入以下验证码继续找回账号。",
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "发送验证码失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "验证码已发送",
+		"data": gin.H{
+			"challenge_id": challenge.ID,
+			"masked_email": service.MaskEmail(email),
+			"expires_in":   int(service.EmailCodeTTL.Seconds()),
+		},
+	})
+}
+
+// ForgotPasswordVerifyCode 校验忘记密码验证码并返回账号列表
+func ForgotPasswordVerifyCode(c *gin.Context) {
+	var req PasswordForgotVerifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if _, err := service.VerifyPublicEmailChallenge(req.ChallengeID, service.ChallengePurposePasswordForgot, email, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	accounts, err := service.ListPasswordResetAccountsByEmail(email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": err.Error()})
+		return
+	}
+
+	selectionToken, err := middleware.GenerateTokenWithTTL(0, email, "", service.TokenTypePasswordResetSelect, 10*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成账号选择令牌失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "邮箱验证成功",
+		"data": gin.H{
+			"selection_token": selectionToken,
+			"accounts":        accounts,
+			"email":           email,
+			"masked_email":    service.MaskEmail(email),
+		},
+	})
+}
+
+// ForgotPasswordSelectAccount 选择要重置的账号并返回重置令牌
+func ForgotPasswordSelectAccount(c *gin.Context) {
+	var req PasswordForgotSelectRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+
+	claims, err := middleware.ParseToken(strings.TrimSpace(req.SelectionToken))
+	if err != nil || claims.TokenType != service.TokenTypePasswordResetSelect {
+		c.JSON(http.StatusUnauthorized, gin.H{"code": 401, "message": "账号选择状态已失效，请重新验证邮箱"})
+		return
+	}
+
+	email := strings.TrimSpace(strings.ToLower(claims.Username))
+	user, err := service.FindPasswordResetUser(email, req.Username)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+
+	resetToken, err := middleware.GenerateTokenWithTTL(user.ID, user.Username, user.Role, service.TokenTypePasswordReset, 15*time.Minute)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "生成重置令牌失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "账号确认成功",
+		"data": gin.H{
+			"reset_token": resetToken,
+			"username":    user.Username,
+		},
+	})
+}
+
+// ResetPasswordByEmail 使用邮件链接重置密码
+func ResetPasswordByEmail(c *gin.Context) {
+	var req PasswordResetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	if req.Password != req.ConfirmPassword {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "两次输入的密码不一致"})
+		return
+	}
+	token := strings.TrimSpace(req.Token)
+	if claims, err := middleware.ParseToken(token); err == nil && claims.TokenType == service.TokenTypePasswordReset {
+		if err := service.ResetPasswordByUserID(claims.UserID, req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+	} else {
+		if err := service.ResetPasswordByToken(token, req.Password); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+			return
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "密码已重置，请重新登录"})
+}

@@ -1,0 +1,60 @@
+import request from '@/utils/request'
+
+// ==================== 存储池管理 ====================
+
+// 获取存储池列表
+export function getStoragePoolList() {
+  return request({
+    url: '/storage-pool/list',
+    method: 'get'
+  })
+}
+
+// 获取存储池详情
+export function getStoragePoolDetail(id) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}`,
+    method: 'get'
+  })
+}
+
+// 更新存储池配置
+export function updateStoragePoolConfig(id, data) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}/config`,
+    method: 'put',
+    data
+  })
+}
+
+// 设置默认存储池
+export function setDefaultStoragePool(id) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}/default`,
+    method: 'post',
+  })
+}
+
+// 格式化并挂载存储池
+export function formatMountStoragePool(id) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}/format-mount`,
+    method: 'post'
+  })
+}
+
+// 获取创建虚拟机可选存储位置
+export function getVMStorageTargets() {
+  return request({
+    url: '/storage-pool/vm-targets',
+    method: 'get'
+  })
+}
+
+// 获取所有存储池中的 ISO（聚合）
+export function getAllISOs() {
+  return request({
+    url: '/storage-pool/all-isos',
+    method: 'get'
+  })
+}

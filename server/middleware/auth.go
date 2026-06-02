@@ -1,0 +1,323 @@
+package middleware
+
+import (
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+
+	"kvm_console/config"
+	"kvm_console/model"
+	"kvm_console/service"
+)
+
+// Claims JWT 自定义声明
+type Claims struct {
+	UserID    uint   `json:"user_id"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	TokenType string `json:"token_type"`
+	Operation string `json:"operation,omitempty"`
+	jwt.RegisteredClaims
+}
+
+// GenerateToken 生成默认访问 Token
+func GenerateToken(userID uint, username, role string) (string, error) {
+	return GenerateTokenWithTTL(userID, username, role, service.TokenTypeAccess,
+		time.Duration(config.GlobalConfig.JWTExpireHours)*time.Hour)
+}
+
+// GenerateTokenWithTTL 生成指定类型和有效期的 Token
+func GenerateTokenWithTTL(userID uint, username, role, tokenType string, ttl time.Duration) (string, error) {
+	return GenerateTokenWithOperation(userID, username, role, tokenType, "", ttl)
+}
+
+// GenerateTokenWithOperation 生成带操作范围的 Token
+func GenerateTokenWithOperation(userID uint, username, role, tokenType, operation string, ttl time.Duration) (string, error) {
+	if tokenType == "" {
+		tokenType = service.TokenTypeAccess
+	}
+	claims := &Claims{
+		UserID:    userID,
+		Username:  username,
+		Role:      role,
+		TokenType: tokenType,
+		Operation: operation,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(config.GlobalConfig.JWTSecret))
+}
+
+// ParseToken 解析 JWT Token
+func ParseToken(tokenString string) (*Claims, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(config.GlobalConfig.JWTSecret), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		if claims.TokenType == "" {
+			claims.TokenType = service.TokenTypeAccess
+		}
+		return claims, nil
+	}
+	return nil, jwt.ErrSignatureInvalid
+}
+
+// AuthMiddleware 仅允许正式访问 Token
+func AuthMiddleware() gin.HandlerFunc {
+	return TokenTypeMiddleware(service.TokenTypeAccess)
+}
+
+// TokenTypeMiddleware 允许指定类型的 Token
+func TokenTypeMiddleware(allowedTypes ...string) gin.HandlerFunc {
+	return tokenTypeMiddleware(true, allowedTypes...)
+}
+
+// JWTTokenTypeMiddleware 仅允许 JWT，不接受 API Key。
+func JWTTokenTypeMiddleware(allowedTypes ...string) gin.HandlerFunc {
+	return tokenTypeMiddleware(false, allowedTypes...)
+}
+
+func tokenTypeMiddleware(allowAPIKey bool, allowedTypes ...string) gin.HandlerFunc {
+	allowed := make(map[string]bool)
+	for _, tokenType := range allowedTypes {
+		allowed[tokenType] = true
+	}
+	return func(c *gin.Context) {
+		if apiKeyID, apiKey, ok := extractAPIKeyCredentials(c); ok {
+			if !allowAPIKey || !allowed[service.TokenTypeAccess] {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    401,
+					"message": "当前接口不支持 API Key 认证",
+				})
+				c.Abort()
+				return
+			}
+			user, err := service.AuthenticateAPIKey(apiKeyID, apiKey)
+			if err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"code":    401,
+					"message": err.Error(),
+				})
+				c.Abort()
+				return
+			}
+			setAuthenticatedUser(c, user, service.TokenTypeAccess, "api_key", apiKeyID)
+			c.Next()
+			return
+		}
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			if token := c.Query("token"); token != "" {
+				authHeader = "Bearer " + token
+			}
+		}
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "未登录，请先登录",
+			})
+			c.Abort()
+			return
+		}
+
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "认证格式无效",
+			})
+			c.Abort()
+			return
+		}
+
+		claims, err := ParseToken(parts[1])
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "Token 无效或已过期",
+			})
+			c.Abort()
+			return
+		}
+		if !allowed[claims.TokenType] {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "当前登录状态不允许访问该接口",
+			})
+			c.Abort()
+			return
+		}
+
+		var user model.User
+		if err := model.DB.First(&user, claims.UserID).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "用户不存在或已被删除",
+			})
+			c.Abort()
+			return
+		}
+		if user.Status == service.UserStatusDisabled {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "账号已被禁用",
+			})
+			c.Abort()
+			return
+		}
+		if claims.TokenType == service.TokenTypeAccess && user.Status != service.UserStatusActive {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "账号尚未激活",
+			})
+			c.Abort()
+			return
+		}
+		if user.SecurityUpdatedAt != nil && claims.IssuedAt != nil && claims.IssuedAt.Time.Before(*user.SecurityUpdatedAt) {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"code":    401,
+				"message": "登录状态已失效，请重新登录",
+			})
+			c.Abort()
+			return
+		}
+
+		setAuthenticatedUser(c, &user, claims.TokenType, "jwt", "")
+		c.Next()
+	}
+}
+
+func extractAPIKeyCredentials(c *gin.Context) (string, string, bool) {
+	apiKeyID := strings.TrimSpace(firstHeader(c, "X-API-Key-ID", "X-API-ID", "X-KVM-API-Key-ID"))
+	apiKey := strings.TrimSpace(firstHeader(c, "X-API-Key", "X-KVM-API-Key"))
+	if apiKeyID != "" || apiKey != "" {
+		return apiKeyID, apiKey, true
+	}
+
+	authHeader := strings.TrimSpace(c.GetHeader("Authorization"))
+	for _, prefix := range []string{"ApiKey ", "KVM-API-Key "} {
+		if !strings.HasPrefix(authHeader, prefix) {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimSpace(strings.TrimPrefix(authHeader, prefix)), ":", 2)
+		if len(parts) != 2 {
+			return "", "", true
+		}
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), true
+	}
+	return "", "", false
+}
+
+func firstHeader(c *gin.Context, names ...string) string {
+	for _, name := range names {
+		if value := c.GetHeader(name); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func setAuthenticatedUser(c *gin.Context, user *model.User, tokenType, authType, apiKeyID string) {
+	c.Set("user_id", user.ID)
+	c.Set("username", user.Username)
+	c.Set("role", user.Role)
+	c.Set("token_type", tokenType)
+	c.Set("auth_type", authType)
+	c.Set("current_user", user)
+	if apiKeyID != "" {
+		c.Set("api_key_id", apiKeyID)
+	}
+}
+
+// AdminMiddleware 管理员权限中间件
+func AdminMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists || role != "admin" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "需要管理员权限",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// ElasticCloudOnlyMiddleware 禁止轻量云用户访问弹性云自助能力。
+func ElasticCloudOnlyMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get("role")
+		if role == "admin" {
+			c.Next()
+			return
+		}
+		current, _ := c.Get("current_user")
+		if user, ok := current.(*model.User); ok && service.IsLightweightCloudType(user.CloudType) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "轻量云用户无权使用此功能",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// VMAccessMiddleware VM访问权限中间件
+// 非admin用户操作VM时，检查是否拥有该VM（通过URL参数 :name 获取VM名称）
+func VMAccessMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, _ := c.Get("role")
+		if role == "admin" {
+			c.Next()
+			return
+		}
+
+		vmName := c.Param("name")
+		if vmName == "" {
+			c.Next()
+			return
+		}
+
+		username, _ := c.Get("username")
+		if !checkUserOwnsVM(username.(string), vmName) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"code":    403,
+				"message": "无权操作此虚拟机",
+			})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// checkUserOwnsVM 检查用户是否拥有指定VM（读取VM访问列表文件）
+func checkUserOwnsVM(username, vmName string) bool {
+	filePath := config.GlobalConfig.VMAccessDir + "/" + username
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == vmName {
+			return true
+		}
+	}
+	return false
+}

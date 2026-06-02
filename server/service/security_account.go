@@ -1,0 +1,480 @@
+package service
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/bcrypt"
+
+	"kvm_console/model"
+	"kvm_console/utils"
+)
+
+// InviteDetail 邀请详情页展示信息
+type InviteDetail struct {
+	Username                   string                          `json:"username"`
+	Email                      string                          `json:"email"`
+	Role                       string                          `json:"role"`
+	CloudType                  string                          `json:"cloud_type"`
+	DedicatedVPCSwitchID       uint                            `json:"dedicated_vpc_switch_id"`
+	Status                     string                          `json:"status"`
+	ExpiresAt                  time.Time                       `json:"expires_at"`
+	MaxCPU                     int                             `json:"max_cpu"`
+	MaxMemory                  int                             `json:"max_memory"`
+	MaxDisk                    int                             `json:"max_disk"`
+	MaxVM                      int                             `json:"max_vm"`
+	MaxStorage                 int                             `json:"max_storage"`
+	MaxRuntimeHours            int                             `json:"max_runtime_hours"`
+	EnablePortForward          bool                            `json:"enable_port_forward"`
+	MaxPortForwards            int                             `json:"max_port_forwards"`
+	MaxSnapshots               int                             `json:"max_snapshots"`
+	MaxBandwidthUp             float64                         `json:"max_bandwidth_up"`
+	MaxBandwidthDown           float64                         `json:"max_bandwidth_down"`
+	MaxTrafficDown             float64                         `json:"max_traffic_down"`
+	MaxTrafficUp               float64                         `json:"max_traffic_up"`
+	MaxPublicIPs               int                             `json:"max_public_ips"`
+	LightweightVMRegistrations []LightweightVMRegistrationView `json:"lightweight_vm_registrations,omitempty"`
+}
+
+// PasswordResetAccountCandidate 忘记密码场景下可选择的账号。
+type PasswordResetAccountCandidate struct {
+	Username string `json:"username"`
+	Role     string `json:"role"`
+}
+
+// CreatePendingInvitedUser 创建待激活邀请用户
+func CreatePendingInvitedUser(username, email, role, cloudType string, dedicatedVPCSwitchID uint, maxCPU, maxMemory, maxDisk, maxVM, maxStorage, maxRuntimeHours int, enablePortForward bool, maxPortForwards, maxSnapshots int, maxBandwidthUp, maxBandwidthDown, maxTrafficDown, maxTrafficUp float64, maxPublicIPs int) (*model.User, string, error) {
+	return CreatePendingInvitedUserWithExistingVMs(username, email, role, cloudType, dedicatedVPCSwitchID, false, maxCPU, maxMemory, maxDisk, maxVM, maxStorage, maxRuntimeHours, enablePortForward, maxPortForwards, maxSnapshots, maxBandwidthUp, maxBandwidthDown, maxTrafficDown, maxTrafficUp, maxPublicIPs)
+}
+
+func CreatePendingInvitedUserWithExistingVMs(username, email, role, cloudType string, dedicatedVPCSwitchID uint, useExistingVMs bool, maxCPU, maxMemory, maxDisk, maxVM, maxStorage, maxRuntimeHours int, enablePortForward bool, maxPortForwards, maxSnapshots int, maxBandwidthUp, maxBandwidthDown, maxTrafficDown, maxTrafficUp float64, maxPublicIPs int) (*model.User, string, error) {
+	username = strings.TrimSpace(username)
+	email = strings.TrimSpace(strings.ToLower(email))
+	if username == "" || email == "" {
+		return nil, "", fmt.Errorf("用户名和邮箱不能为空")
+	}
+	if role == "" {
+		role = "user"
+	}
+	cloudType = NormalizeCloudType(cloudType)
+	if role == "admin" {
+		cloudType = CloudTypeElastic
+		dedicatedVPCSwitchID = 0
+	}
+	// 只有在不选择已有VM时才要求专用VPC
+	if role == "user" && IsLightweightCloudType(cloudType) && dedicatedVPCSwitchID == 0 && !useExistingVMs {
+		return nil, "", fmt.Errorf("轻量云用户必须选择专用 VPC 网络")
+	}
+	if role == "user" && IsLightweightCloudType(cloudType) && dedicatedVPCSwitchID > 0 {
+		var count int64
+		if err := model.DB.Model(&model.VPCSwitch{}).
+			Where("id = ? AND (bridge_mode = '' OR bridge_mode = ? OR bridge_mode IS NULL)", dedicatedVPCSwitchID, BridgeModeNAT).
+			Count(&count).Error; err != nil {
+			return nil, "", fmt.Errorf("检查专用 VPC 网络失败: %w", err)
+		}
+		if count == 0 {
+			return nil, "", fmt.Errorf("请选择有效的 NAT 类型专用 VPC 网络")
+		}
+	}
+
+	var count int64
+	if err := model.DB.Model(&model.User{}).Where("username = ?", username).Count(&count).Error; err != nil {
+		return nil, "", fmt.Errorf("检查用户名失败: %w", err)
+	}
+	if count > 0 {
+		return nil, "", fmt.Errorf("用户名 %s 已存在", username)
+	}
+	model.DB.Unscoped().Where("username = ? AND deleted_at IS NOT NULL", username).Delete(&model.User{})
+
+	user := &model.User{
+		Username:             username,
+		Email:                email,
+		Role:                 role,
+		CloudType:            cloudType,
+		DedicatedVPCSwitchID: dedicatedVPCSwitchID,
+		Status:               UserStatusPendingInvite,
+		MaxCPU:               maxCPU,
+		MaxMemory:            maxMemory,
+		MaxDisk:              maxDisk,
+		MaxVM:                maxVM,
+		MaxStorage:           maxStorage,
+		MaxRuntimeHours:      maxRuntimeHours,
+		EnablePortForward:    enablePortForward,
+		MaxPortForwards:      maxPortForwards,
+		MaxSnapshots:         maxSnapshots,
+		MaxBandwidthUp:       maxBandwidthUp,
+		MaxBandwidthDown:     maxBandwidthDown,
+		MaxTrafficDown:       maxTrafficDown,
+		MaxTrafficUp:         maxTrafficUp,
+		MaxPublicIPs:         maxPublicIPs,
+	}
+	if err := model.DB.Create(user).Error; err != nil {
+		return nil, "", fmt.Errorf("创建待激活用户失败: %w", err)
+	}
+
+	inviteToken, _, err := CreateAuthActionToken(user.ID, ActionTokenPurposeInviteRegister, InviteLinkTTL)
+	if err != nil {
+		return nil, "", fmt.Errorf("创建邀请令牌失败: %w", err)
+	}
+	return user, inviteToken, nil
+}
+
+// ResendInviteToken 重新生成邀请令牌
+func ResendInviteToken(username string) (*model.User, string, error) {
+	var user model.User
+	if err := model.DB.Where("username = ?", strings.TrimSpace(username)).First(&user).Error; err != nil {
+		return nil, "", fmt.Errorf("用户不存在")
+	}
+	if user.Status != UserStatusPendingInvite {
+		return nil, "", fmt.Errorf("该用户已激活，不能重发邀请")
+	}
+	token, _, err := CreateAuthActionToken(user.ID, ActionTokenPurposeInviteRegister, InviteLinkTTL)
+	if err != nil {
+		return nil, "", err
+	}
+	return &user, token, nil
+}
+
+// BuildInviteDetail 获取邀请详情
+func BuildInviteDetail(rawToken string) (*InviteDetail, *model.AuthActionToken, *model.User, error) {
+	record, user, err := FindValidAuthActionToken(rawToken, ActionTokenPurposeInviteRegister)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	detail := &InviteDetail{
+		Username:             user.Username,
+		Email:                user.Email,
+		Role:                 user.Role,
+		CloudType:            NormalizeCloudType(user.CloudType),
+		DedicatedVPCSwitchID: user.DedicatedVPCSwitchID,
+		Status:               user.Status,
+		ExpiresAt:            record.ExpiresAt,
+		MaxCPU:               user.MaxCPU,
+		MaxMemory:            user.MaxMemory,
+		MaxDisk:              user.MaxDisk,
+		MaxVM:                user.MaxVM,
+		MaxStorage:           user.MaxStorage,
+		MaxRuntimeHours:      user.MaxRuntimeHours,
+		EnablePortForward:    user.EnablePortForward,
+		MaxPortForwards:      user.MaxPortForwards,
+		MaxSnapshots:         user.MaxSnapshots,
+		MaxBandwidthUp:       user.MaxBandwidthUp,
+		MaxBandwidthDown:     user.MaxBandwidthDown,
+		MaxTrafficDown:       user.MaxTrafficDown,
+		MaxTrafficUp:         user.MaxTrafficUp,
+		MaxPublicIPs:         user.MaxPublicIPs,
+	}
+	if user.Role == "user" && IsLightweightCloudType(user.CloudType) {
+		if regs, err := ListLightweightVMRegistrations(user.Username, false); err == nil {
+			detail.LightweightVMRegistrations = regs
+		}
+	}
+	return detail, record, user, nil
+}
+
+// CompleteInviteRegistration 完成邀请注册
+func CompleteInviteRegistration(rawToken, password string) (*model.User, error) {
+	record, user, err := FindValidAuthActionToken(rawToken, ActionTokenPurposeInviteRegister)
+	if err != nil {
+		return nil, err
+	}
+	if user.Status != UserStatusPendingInvite {
+		return nil, fmt.Errorf("邀请已失效")
+	}
+	if err := ValidateStrongPassword(password); err != nil {
+		return nil, err
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("密码加密失败: %w", err)
+	}
+
+	now := time.Now()
+	loginVerifiedUntil := now.Add(LoginVerificationWindow)
+	if err := model.DB.Model(user).Updates(map[string]interface{}{
+		"password_hash":        string(hashedPassword),
+		"status":               UserStatusActive,
+		"email_verified_at":    &now,
+		"login_verified_until": &loginVerifiedUntil,
+		"security_updated_at":  &now,
+	}).Error; err != nil {
+		return nil, fmt.Errorf("激活用户失败: %w", err)
+	}
+	if err := provisionSystemUserResources(user, password); err != nil {
+		return nil, err
+	}
+	if user.Role == "user" && !IsLightweightCloudType(user.CloudType) {
+		if _, err := EnsureDefaultSecurityGroup(user.Username); err != nil {
+			return nil, err
+		}
+		if _, err := EnsureDefaultVPCSwitch(user.Username); err != nil {
+			return nil, err
+		}
+	}
+	if err := ConsumeAuthActionToken(record.ID); err != nil {
+		return nil, err
+	}
+	user.PasswordHash = string(hashedPassword)
+	user.Status = UserStatusActive
+	user.EmailVerifiedAt = &now
+	user.LoginVerifiedUntil = &loginVerifiedUntil
+	user.SecurityUpdatedAt = &now
+	return user, nil
+}
+
+// SendInviteEmail 发送邀请邮件
+func SendInviteEmail(user *model.User, inviteURL string) error {
+	body := fmt.Sprintf("您好，%s：\n\n管理员已为您创建账户，请通过以下链接完成注册：\n%s\n\n链接有效期：72 小时。", user.Username, inviteURL)
+	if user.Role == "user" && IsLightweightCloudType(user.CloudType) {
+		if regs, err := ListLightweightVMRegistrations(user.Username, false); err == nil && len(regs) > 0 {
+			body += "\n\n管理员同时为您登记了以下待开通轻量云服务器。注册并登录面板后，请逐台确认配置并补全登录凭据，系统才会开始开通服务器。\n\n"
+			body += FormatLightweightVMRegistrationList(regs)
+		}
+	}
+	body += "\n如果不是您本人操作，请忽略此邮件。"
+	return SendEmail(user.Email, "账户注册邀请", body)
+}
+
+func SendLightweightVMRegistrationEmail(user *model.User, panelURL string, regs []LightweightVMRegistrationView) error {
+	if user == nil || len(regs) == 0 {
+		return nil
+	}
+	body := fmt.Sprintf("您好，%s：\n\n管理员为您登记了新的轻量云服务器，请登录面板确认配置并补全登录凭据。确认后系统才会开始开通服务器。\n\n面板地址：%s\n\n配置清单：\n%s\n如果不是您本人操作，请联系管理员。", user.Username, panelURL, FormatLightweightVMRegistrationList(regs))
+	return SendEmail(user.Email, "轻量云服务器开通确认", body)
+}
+
+// SendPasswordResetEmail 发送找回密码邮件
+func SendPasswordResetEmail(user *model.User, resetURL string) error {
+	body := fmt.Sprintf("您好，%s：\n\n请通过以下链接重置密码：\n%s\n\n链接有效期：1 小时。\n如果不是您本人操作，请忽略此邮件。", user.Username, resetURL)
+	return SendEmail(user.Email, "找回账户密码", body)
+}
+
+// CreatePasswordResetToken 创建找回密码令牌
+func CreatePasswordResetToken(email string) (*model.User, string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	var users []model.User
+	if err := model.DB.
+		Where("email = ? AND status = ? AND deleted_at IS NULL", email, UserStatusActive).
+		Order("id ASC").
+		Find(&users).Error; err != nil {
+		return nil, "", fmt.Errorf("未找到对应的已激活账户")
+	}
+	if len(users) == 0 {
+		return nil, "", fmt.Errorf("未找到对应的已激活账户")
+	}
+	if len(users) > 1 {
+		return nil, "", fmt.Errorf("该邮箱绑定了多个账号，请使用验证码选择账号后再重置密码")
+	}
+	user := users[0]
+	token, _, err := CreateAuthActionToken(user.ID, ActionTokenPurposePasswordReset, PasswordResetLinkTTL)
+	if err != nil {
+		return nil, "", err
+	}
+	return &user, token, nil
+}
+
+// ListPasswordResetAccountsByEmail 列出邮箱下可重置密码的账号。
+func ListPasswordResetAccountsByEmail(email string) ([]PasswordResetAccountCandidate, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, fmt.Errorf("邮箱不能为空")
+	}
+
+	var users []model.User
+	if err := model.DB.
+		Where("email = ? AND status = ? AND deleted_at IS NULL", email, UserStatusActive).
+		Order("username ASC").
+		Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("查询邮箱绑定账号失败: %w", err)
+	}
+
+	candidates := make([]PasswordResetAccountCandidate, 0, len(users))
+	for _, user := range users {
+		candidates = append(candidates, PasswordResetAccountCandidate{
+			Username: user.Username,
+			Role:     user.Role,
+		})
+	}
+	return candidates, nil
+}
+
+// FindPasswordResetUser 查找指定邮箱下的目标账号。
+func FindPasswordResetUser(email, username string) (*model.User, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	username = strings.TrimSpace(username)
+	if email == "" || username == "" {
+		return nil, fmt.Errorf("邮箱和用户名不能为空")
+	}
+
+	var user model.User
+	if err := model.DB.
+		Where("email = ? AND username = ? AND status = ? AND deleted_at IS NULL", email, username, UserStatusActive).
+		First(&user).Error; err != nil {
+		return nil, fmt.Errorf("未找到对应的已激活账户")
+	}
+	return &user, nil
+}
+
+// ResetPasswordByToken 使用邮件令牌重置密码
+func ResetPasswordByToken(rawToken, newPassword string) error {
+	record, user, err := FindValidAuthActionToken(rawToken, ActionTokenPurposePasswordReset)
+	if err != nil {
+		return err
+	}
+	if err := resetUserPassword(user, newPassword); err != nil {
+		return err
+	}
+	if err := ConsumeAuthActionToken(record.ID); err != nil {
+		return err
+	}
+	if err := InvalidateAuthActionTokens(user.ID, ActionTokenPurposePasswordReset); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ResetPasswordByUserID 使用用户 ID 直接重置密码。
+func ResetPasswordByUserID(userID uint, newPassword string) error {
+	var user model.User
+	if err := model.DB.Where("id = ? AND status = ? AND deleted_at IS NULL", userID, UserStatusActive).First(&user).Error; err != nil {
+		return fmt.Errorf("用户不存在或已失效")
+	}
+	if err := resetUserPassword(&user, newPassword); err != nil {
+		return err
+	}
+	if err := InvalidateAuthActionTokens(user.ID, ActionTokenPurposePasswordReset); err != nil {
+		return err
+	}
+	return nil
+}
+
+func resetUserPassword(user *model.User, newPassword string) error {
+	if user == nil {
+		return fmt.Errorf("用户不存在或已失效")
+	}
+	if err := ValidateStrongPassword(newPassword); err != nil {
+		return err
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("密码加密失败: %w", err)
+	}
+
+	now := time.Now()
+	if err := model.DB.Model(user).Updates(map[string]interface{}{
+		"password_hash":            string(hashedPassword),
+		"login_verified_until":     nil,
+		"high_risk_verified_until": nil,
+		"security_updated_at":      &now,
+	}).Error; err != nil {
+		return fmt.Errorf("更新密码失败: %w", err)
+	}
+	if user.Role == "user" {
+		_ = SyncUserPassword(user.Username, newPassword)
+	}
+	return nil
+}
+
+// BindUserEmail 绑定或更新邮箱
+func BindUserEmail(userID uint, email string, verifiedAt time.Time) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	return model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"email":             email,
+		"email_verified_at": &verifiedAt,
+	}).Error
+}
+
+// EnableUserTOTP 启用用户 2FA
+func EnableUserTOTP(userID uint, secret string) error {
+	encrypted, err := EncryptSecurityText(secret)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	return model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"totp_enabled":    true,
+		"totp_secret_enc": encrypted,
+		"totp_bound_at":   &now,
+	}).Error
+}
+
+// DisableUserTOTP 关闭用户 2FA
+func DisableUserTOTP(userID uint) error {
+	return model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"totp_enabled":    false,
+		"totp_secret_enc": "",
+		"totp_bound_at":   nil,
+	}).Error
+}
+
+// GetUserTOTPSecret 获取用户 2FA 密钥
+func GetUserTOTPSecret(user *model.User) (string, error) {
+	if user == nil || strings.TrimSpace(user.TOTPSecretEnc) == "" {
+		return "", fmt.Errorf("尚未绑定 2FA")
+	}
+	return DecryptSecurityText(user.TOTPSecretEnc)
+}
+
+// UpdateLoginVerificationWindow 刷新登录验证窗口
+func UpdateLoginVerificationWindow(userID uint) error {
+	until := time.Now().Add(LoginVerificationWindow)
+	return model.DB.Model(&model.User{}).Where("id = ?", userID).
+		Update("login_verified_until", &until).Error
+}
+
+// GrantHighRiskVerificationTrust 设置高风险验证信任窗口
+func GrantHighRiskVerificationTrust(userID uint) error {
+	until := time.Now().Add(HighRiskEmailTrustWindow)
+	return model.DB.Model(&model.User{}).Where("id = ?", userID).
+		Update("high_risk_verified_until", &until).Error
+}
+
+// CanSkipHighRiskVerification 判断是否可跳过高风险验证
+func CanSkipHighRiskVerification(user *model.User) bool {
+	return user != nil && user.HighRiskVerifiedUntil != nil && time.Now().Before(*user.HighRiskVerifiedUntil)
+}
+
+// CanEnterBootstrap 判断是否需要进入安全引导
+func CanEnterBootstrap(user *model.User) bool {
+	if IsSecurityVerificationDisabled() {
+		return false
+	}
+	if user == nil {
+		return false
+	}
+	if user.Role == "admin" {
+		return !IsSMTPConfigured() || user.EmailVerifiedAt == nil || !user.TOTPEnabled
+	}
+	return user.EmailVerifiedAt == nil
+}
+
+// NeedsLoginVerification 判断是否需要登录期验证
+func NeedsLoginVerification(user *model.User) bool {
+	if IsSecurityVerificationDisabled() {
+		return false
+	}
+	if user == nil {
+		return false
+	}
+	if user.Role == "admin" {
+		return true
+	}
+	if user.LoginVerifiedUntil == nil {
+		return true
+	}
+	return time.Now().After(*user.LoginVerifiedUntil)
+}
+
+// SyncUserPassword 同步系统用户密码
+func SyncUserPassword(username, password string) error {
+	if strings.TrimSpace(username) == "" || strings.TrimSpace(password) == "" {
+		return nil
+	}
+	result := utils.ExecShell(fmt.Sprintf("echo '%s:%s' | chpasswd", username, password))
+	if result.Error != nil {
+		return fmt.Errorf("同步系统密码失败: %s", result.Stderr)
+	}
+	return nil
+}
