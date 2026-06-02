@@ -342,6 +342,7 @@ func BatchCloneVm(c *gin.Context) {
 		FirstBootRebootMode: req.FirstBootRebootMode,
 		SwitchID:            req.SwitchID,
 		SecurityGroupID:     req.SecurityGroupID,
+		IsAdmin:             isAdmin,
 	}
 
 	username, _ := c.Get("username")

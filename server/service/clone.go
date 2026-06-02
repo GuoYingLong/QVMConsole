@@ -122,6 +122,7 @@ type BatchCloneParams struct {
 	StoragePoolID       string                  `json:"storage_pool_id,omitempty"`        // 存储池
 	SwitchID            uint                    `json:"switch_id,omitempty"`               // VPC 交换机 ID
 	SecurityGroupID     uint                    `json:"security_group_id,omitempty"`      // 安全组 ID
+	IsAdmin             bool                    `json:"is_admin,omitempty"`               // 是否管理员
 }
 
 // ReinstallParams 重装系统参数
@@ -1570,6 +1571,7 @@ func BatchCloneVM(ctx context.Context, params *BatchCloneParams, progressFn func
 				FirstBootRebootMode: params.FirstBootRebootMode,
 				SwitchID:            params.SwitchID,
 				SecurityGroupID:     params.SecurityGroupID,
+				IsAdmin:             params.IsAdmin,
 			}
 
 			subProgress := func(_ int, msg string) {
