@@ -27,3 +27,4 @@ scripts/
 *.sln
 *.sw?
 *.exe
+kvm-console-linux-amd64
