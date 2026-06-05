@@ -20,6 +20,7 @@ type User struct {
 	TOTPEnabled           bool           `json:"totp_enabled" gorm:"default:false"`
 	TOTPSecretEnc         string         `json:"-" gorm:"type:text"`
 	TOTPBoundAt           *time.Time     `json:"totp_bound_at"`
+	TOTPRecoveryCodesEnc  string         `json:"-" gorm:"type:text"` // 加密的恢复码哈希列表（JSON 数组）
 	LoginVerifiedUntil    *time.Time     `json:"login_verified_until"`
 	HighRiskVerifiedUntil *time.Time     `json:"high_risk_verified_until"`
 	SecurityUpdatedAt     *time.Time     `json:"security_updated_at"`

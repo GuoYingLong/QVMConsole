@@ -24,6 +24,7 @@ type SecurityState struct {
 	Status              string  `json:"status"`
 	LoginVerifiedUntil  *string `json:"login_verified_until"`
 	HighRiskMethod      string  `json:"high_risk_method"`
+	HasRecoveryCodes    bool    `json:"has_recovery_codes"` // 是否有可用恢复码
 }
 
 // IsSecurityVerificationDisabled 是否禁用安全验证
@@ -34,16 +35,17 @@ func IsSecurityVerificationDisabled() bool {
 // BuildSecurityState 构建安全状态
 func BuildSecurityState(user *model.User) SecurityState {
 	state := SecurityState{
-		Email:           strings.TrimSpace(user.Email),
-		MaskedEmail:     MaskEmail(user.Email),
-		EmailVerified:   user.EmailVerifiedAt != nil,
-		TOTPEnabled:     user.TOTPEnabled,
-		MustBindEmail:   user.EmailVerifiedAt == nil,
-		MustBind2FA:     user.Role == "admin" && !user.TOTPEnabled,
-		SMTPConfigured:  IsSMTPConfigured(),
-		DevelopmentMode: IsSecurityVerificationDisabled(),
-		MaintenanceMode: IsMaintenanceModeEnabled(),
-		Status:          user.Status,
+		Email:            strings.TrimSpace(user.Email),
+		MaskedEmail:      MaskEmail(user.Email),
+		EmailVerified:    user.EmailVerifiedAt != nil,
+		TOTPEnabled:      user.TOTPEnabled,
+		MustBindEmail:    user.EmailVerifiedAt == nil,
+		MustBind2FA:      user.Role == "admin" && !user.TOTPEnabled,
+		SMTPConfigured:   IsSMTPConfigured(),
+		DevelopmentMode:  IsSecurityVerificationDisabled(),
+		MaintenanceMode:  IsMaintenanceModeEnabled(),
+		Status:           user.Status,
+		HasRecoveryCodes: HasRecoveryCodes(user),
 	}
 	if state.DevelopmentMode {
 		state.MustBindEmail = false

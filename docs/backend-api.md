@@ -152,7 +152,8 @@ API Key 管理接口：
       "smtp_configured": true,
       "status": "active",
       "login_verified_until": "2026-04-26T10:00:00+08:00",
-      "high_risk_method": "totp"
+      "high_risk_method": "totp",
+      "has_recovery_codes": true
     }
   }
 }

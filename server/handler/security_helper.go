@@ -106,13 +106,17 @@ func requireHighRiskVerificationWithOptions(c *gin.Context, operation string, al
 				return true
 			}
 		}
+		respData := gin.H{
+			"method":    service.ChallengeMethodTOTP,
+			"operation": operation,
+		}
+		if service.HasRecoveryCodes(user) {
+			respData["has_recovery"] = true
+		}
 		c.JSON(http.StatusPreconditionRequired, gin.H{
 			"code":    http.StatusPreconditionRequired,
 			"message": "当前操作需要 2FA 验证",
-			"data": gin.H{
-				"method":    service.ChallengeMethodTOTP,
-				"operation": operation,
-			},
+			"data":    respData,
 		})
 		return false
 	}

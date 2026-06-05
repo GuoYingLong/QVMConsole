@@ -95,6 +95,14 @@ export function disable2FA(data) {
   })
 }
 
+export function regenRecoveryCodes(data) {
+  return request({
+    url: '/auth/2fa/recovery/regen',
+    method: 'post',
+    data
+  })
+}
+
 export function verifyHighRisk(data) {
   return request({
     url: '/auth/high-risk/verify',

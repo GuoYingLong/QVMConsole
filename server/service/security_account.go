@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -386,26 +387,50 @@ func BindUserEmail(userID uint, email string, verifiedAt time.Time) error {
 	}).Error
 }
 
-// EnableUserTOTP 启用用户 2FA
-func EnableUserTOTP(userID uint, secret string) error {
+// EnableUserTOTP 启用用户 2FA，返回恢复码明文（仅此一次）
+func EnableUserTOTP(userID uint, secret string) (*TOTPRecoverySetup, error) {
 	encrypted, err := EncryptSecurityText(secret)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	// 生成恢复码
+	plainCodes, hashedCodes, err := GenerateRecoveryCodes()
+	if err != nil {
+		return nil, fmt.Errorf("生成恢复码失败: %w", err)
+	}
+
+	// 序列化并加密哈希列表
+	hashedJSON, err := json.Marshal(hashedCodes)
+	if err != nil {
+		return nil, fmt.Errorf("序列化恢复码失败: %w", err)
+	}
+	encryptedCodes, err := EncryptSecurityText(string(hashedJSON))
+	if err != nil {
+		return nil, fmt.Errorf("加密恢复码失败: %w", err)
+	}
+
 	now := time.Now()
-	return model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"totp_enabled":    true,
-		"totp_secret_enc": encrypted,
-		"totp_bound_at":   &now,
+	err = model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
+		"totp_enabled":            true,
+		"totp_secret_enc":         encrypted,
+		"totp_bound_at":           &now,
+		"totp_recovery_codes_enc": encryptedCodes,
 	}).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &TOTPRecoverySetup{RecoveryCodes: plainCodes}, nil
 }
 
 // DisableUserTOTP 关闭用户 2FA
 func DisableUserTOTP(userID uint) error {
 	return model.DB.Model(&model.User{}).Where("id = ?", userID).Updates(map[string]interface{}{
-		"totp_enabled":    false,
-		"totp_secret_enc": "",
-		"totp_bound_at":   nil,
+		"totp_enabled":            false,
+		"totp_secret_enc":         "",
+		"totp_bound_at":           nil,
+		"totp_recovery_codes_enc": "",
 	}).Error
 }
 
@@ -415,6 +440,36 @@ func GetUserTOTPSecret(user *model.User) (string, error) {
 		return "", fmt.Errorf("尚未绑定 2FA")
 	}
 	return DecryptSecurityText(user.TOTPSecretEnc)
+}
+
+// HasRecoveryCodes 判断用户是否有可用恢复码
+func HasRecoveryCodes(user *model.User) bool {
+	return user != nil && user.TOTPEnabled && GetRecoveryCodesRemaining(user.TOTPRecoveryCodesEnc) > 0
+}
+
+// RegenerateRecoveryCodes 重新生成恢复码（旧码立即失效），返回新恢复码明文
+func RegenerateRecoveryCodes(userID uint) (*TOTPRecoverySetup, error) {
+	plainCodes, hashedCodes, err := GenerateRecoveryCodes()
+	if err != nil {
+		return nil, fmt.Errorf("生成恢复码失败: %w", err)
+	}
+
+	hashedJSON, err := json.Marshal(hashedCodes)
+	if err != nil {
+		return nil, fmt.Errorf("序列化恢复码失败: %w", err)
+	}
+	encryptedCodes, err := EncryptSecurityText(string(hashedJSON))
+	if err != nil {
+		return nil, fmt.Errorf("加密恢复码失败: %w", err)
+	}
+
+	err = model.DB.Model(&model.User{}).Where("id = ?", userID).
+		Update("totp_recovery_codes_enc", encryptedCodes).Error
+	if err != nil {
+		return nil, err
+	}
+
+	return &TOTPRecoverySetup{RecoveryCodes: plainCodes}, nil
 }
 
 // UpdateLoginVerificationWindow 刷新登录验证窗口

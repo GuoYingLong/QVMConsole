@@ -156,8 +156,14 @@ func Login(c *gin.Context) {
 		allowedMethods := []string{service.ChallengeMethodEmail}
 		if user.Role == "admin" {
 			allowedMethods = []string{service.ChallengeMethodTOTP}
+			if service.HasRecoveryCodes(&user) {
+				allowedMethods = append(allowedMethods, service.ChallengeMethodRecovery)
+			}
 		} else if user.TOTPEnabled {
 			allowedMethods = []string{service.ChallengeMethodTOTP, service.ChallengeMethodEmail}
+			if service.HasRecoveryCodes(&user) {
+				allowedMethods = append(allowedMethods, service.ChallengeMethodRecovery)
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -364,6 +370,19 @@ func VerifyLoginStage(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 			return
 		}
+	case service.ChallengeMethodRecovery:
+		valid, newEnc, err := service.ValidateAndConsumeRecoveryCode(user.TOTPRecoveryCodesEnc, req.Code)
+		if err != nil || !valid {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "恢复码无效或已使用"})
+			return
+		}
+		// 更新数据库中的恢复码
+		if updateErr := model.DB.Model(user).Where("id = ?", user.ID).
+			Update("totp_recovery_codes_enc", newEnc).Error; updateErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "更新恢复码状态失败"})
+			return
+		}
+		user.TOTPRecoveryCodesEnc = newEnc
 	case service.ChallengeMethodEmail:
 		if user.Role == "admin" {
 			c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "管理员登录仅支持 2FA 验证"})
@@ -532,7 +551,8 @@ func EnableTOTP(c *gin.Context) {
 	}
 
 	user := getCurrentUser(c)
-	if err := service.EnableUserTOTP(user.ID, req.Secret); err != nil {
+	recoverySetup, err := service.EnableUserTOTP(user.ID, req.Secret)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "启用 2FA 失败: " + err.Error()})
 		return
 	}
@@ -560,10 +580,49 @@ func EnableTOTP(c *gin.Context) {
 				CloudType: service.NormalizeCloudType(freshUser.CloudType),
 				Security:  *state,
 			},
+			"recovery": recoverySetup,
 		})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "2FA 绑定成功", "data": gin.H{"security": state}})
+	c.JSON(http.StatusOK, gin.H{
+		"code":     200,
+		"message":  "2FA 绑定成功",
+		"data":     gin.H{"security": state},
+		"recovery": recoverySetup,
+	})
+}
+
+// RegenRecoveryCodes 重新生成恢复码（旧码立即失效，需验证当前2FA）
+func RegenRecoveryCodes(c *gin.Context) {
+	var req TOTPDisableRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	user := getCurrentUser(c)
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)) != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "密码错误"})
+		return
+	}
+	secret, err := service.GetUserTOTPSecret(user)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	if err := service.ValidateTOTPCode(secret, req.Code); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	recoverySetup, err := service.RegenerateRecoveryCodes(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "重新生成恢复码失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":     200,
+		"message":  "恢复码已重新生成",
+		"recovery": recoverySetup,
+	})
 }
 
 // DisableTOTP 关闭 2FA
@@ -634,6 +693,29 @@ func VerifyHighRisk(c *gin.Context) {
 			"data": gin.H{
 				"verification_token": token,
 				"trusted_until":      time.Now().Add(service.HighRiskEmailTrustWindow).Format(time.RFC3339),
+			},
+		})
+	case service.ChallengeMethodRecovery:
+		valid, newEnc, err := service.ValidateAndConsumeRecoveryCode(user.TOTPRecoveryCodesEnc, req.Code)
+		if err != nil || !valid {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "恢复码无效或已使用"})
+			return
+		}
+		if updateErr := model.DB.Model(user).Where("id = ?", user.ID).
+			Update("totp_recovery_codes_enc", newEnc).Error; updateErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "更新恢复码状态失败"})
+			return
+		}
+		if err := service.GrantHighRiskVerificationTrust(user.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "message": "写入高风险信任状态失败"})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "高风险验证成功（恢复码已消耗）",
+			"data": gin.H{
+				"trusted_until":           time.Now().Add(service.HighRiskEmailTrustWindow).Format(time.RFC3339),
+				"recovery_codes_remaining": service.GetRecoveryCodesRemaining(newEnc),
 			},
 		})
 	case service.ChallengeMethodEmail:

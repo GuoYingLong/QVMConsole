@@ -236,6 +236,37 @@
                 <el-button type="danger" :loading="disable2FALoading" @click="handleDisable2FA">关闭 2FA</el-button>
               </el-form-item>
             </el-form>
+
+            <!-- 恢复码管理 -->
+            <el-divider />
+            <el-alert
+              v-if="userStore.security?.has_recovery_codes"
+              type="success"
+              :closable="false"
+              style="margin-bottom: 12px;"
+              title="您有可用的恢复码，若 2FA 设备不可用可使用恢复码登录"
+            />
+            <el-alert
+              v-else
+              type="warning"
+              :closable="false"
+              style="margin-bottom: 12px;"
+              title="暂无可用恢复码，建议生成新的恢复码以备用"
+            />
+            <div class="security-tip" style="margin-bottom: 12px;">
+              恢复码用于在 2FA 验证器不可用时登录。重新生成后旧恢复码将立即失效。
+            </div>
+            <el-form label-width="110px" class="security-form">
+              <el-form-item label="当前密码">
+                <el-input v-model="disable2FAForm.password" type="password" show-password placeholder="请输入当前密码" />
+              </el-form-item>
+              <el-form-item label="2FA 验证码">
+                <el-input v-model="disable2FAForm.code" maxlength="6" show-word-limit placeholder="请输入 6 位验证码" />
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" :loading="regenRecoveryLoading" @click="handleRegenRecovery">重新生成恢复码</el-button>
+              </el-form-item>
+            </el-form>
           </template>
 
           <template v-else>
@@ -392,7 +423,7 @@ import QRCode from 'qrcode'
 import { useUserStore } from '@/store/user'
 import { useVmStore } from '@/store/vm'
 import { getAPIKeyInfo, revokeAPIKey, rotateAPIKey } from '@/api/apiKey'
-import { bindEmail, changePassword, changeUsername, disable2FA, enable2FA, getUserInfo, sendEmailCode, setup2FA } from '@/api/auth'
+import { bindEmail, changePassword, changeUsername, disable2FA, enable2FA, getUserInfo, regenRecoveryCodes, sendEmailCode, setup2FA } from '@/api/auth'
 import SidebarIcons from '@/components/icons/SidebarIcons.vue'
 import {
   ArrowDown,
@@ -499,6 +530,8 @@ const disable2FAForm = reactive({
   password: '',
   code: ''
 })
+const recoveryCodes = ref([])
+const regenRecoveryLoading = ref(false)
 const apiKeyInfo = ref(null)
 const generatedAPIKey = ref('')
 const apiKeyLoading = ref(false)
@@ -714,10 +747,26 @@ const handleEnable2FA = async () => {
   }
   enable2FALoading.value = true
   try {
-    await enable2FA({
+    const res = await enable2FA({
       secret: totpSetup.secret,
       code: totpSetup.code
     })
+    if (res.recovery?.recovery_codes?.length) {
+      recoveryCodes.value = res.recovery.recovery_codes
+      ElMessageBox.alert(
+        formatRecoveryCodesMessage(res.recovery.recovery_codes),
+        '请保存恢复码',
+        {
+          dangerouslyUseHTMLString: true,
+          confirmButtonText: '我已安全保存',
+          type: 'warning',
+          beforeClose: (action, instance, done) => {
+            recoveryCodes.value = []
+            done()
+          }
+        }
+      )
+    }
     await refreshSecurityInfo()
     totpSetup.secret = ''
     totpSetup.otpauth_url = ''
@@ -742,6 +791,45 @@ const handleDisable2FA = async () => {
     ElMessage.success('2FA 已关闭')
   } finally {
     disable2FALoading.value = false
+  }
+}
+
+const formatRecoveryCodesMessage = (codes) => {
+  const codeItems = codes.map((c, i) => `<div style="font-family:monospace;padding:2px 0;">${String(i + 1).padStart(2, '0')}. <b>${c}</b></div>`).join('')
+  return `<div style="font-size:14px;"><p style="color:#e53e3e;font-weight:bold;margin-bottom:8px;">以下恢复码仅在本次显示，请立即复制/保存：</p><div style="background:#f5f5f5;padding:12px;border-radius:4px;margin-bottom:8px;">${codeItems}</div><p style="font-size:12px;color:#666;">当 2FA 验证器不可用时，可使用恢复码登录。每个码只能使用一次。</p></div>`
+}
+
+const handleRegenRecovery = async () => {
+  if (!disable2FAForm.password || !disable2FAForm.code) {
+    ElMessage.warning('请先输入当前密码和 2FA 验证码')
+    return
+  }
+  regenRecoveryLoading.value = true
+  try {
+    const res = await regenRecoveryCodes({
+      password: disable2FAForm.password,
+      code: disable2FAForm.code
+    })
+    if (res.recovery?.recovery_codes?.length) {
+      recoveryCodes.value = res.recovery.recovery_codes
+      ElMessageBox.alert(
+        formatRecoveryCodesMessage(res.recovery.recovery_codes),
+        '新的恢复码',
+        {
+          dangerouslyUseHTMLString: true,
+          confirmButtonText: '我已安全保存',
+          type: 'warning',
+          beforeClose: () => {
+            recoveryCodes.value = []
+            disable2FAForm.password = ''
+            disable2FAForm.code = ''
+          }
+        }
+      )
+    }
+    await refreshSecurityInfo()
+  } finally {
+    regenRecoveryLoading.value = false
   }
 }
 

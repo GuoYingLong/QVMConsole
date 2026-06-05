@@ -102,11 +102,11 @@ export const endpointGroups = [
         response: 'data: challenge_id, masked_email, expires_in。',
         notes: ['请求头必须使用 login token，不支持 API Key。']
       }),
-      ep('POST', '/auth/login/verify', '完成登录阶段 TOTP/邮箱验证', {
+      ep('POST', '/auth/login/verify', '完成登录阶段 TOTP/邮箱/恢复码验证', {
         auth: jwtOnly,
-        body: 'JSON: method(totp/email), code, challenge_id',
+        body: 'JSON: method(totp/recovery/email), code, challenge_id',
         response: 'data: stage, token, username, role, cloud_type, security。',
-        notes: ['请求头必须使用 login token，不支持 API Key。']
+        notes: ['请求头必须使用 login token，不支持 API Key。', 'recovery 方法传入 16 位恢复码，每个恢复码只能使用一次。']
       }),
       ep('POST', '/auth/email/code/send', '发送邮箱绑定验证码', {
         auth: jwtOnly,
@@ -128,14 +128,20 @@ export const endpointGroups = [
       ep('POST', '/auth/2fa/enable', '启用 TOTP 2FA', {
         auth: jwtOnly,
         body: 'JSON: secret, code',
-        response: 'data: security；管理员引导完成时返回新的 access token。',
+        response: 'data: security；管理员引导完成时返回新的 access token。response 中还包含 recovery: { recovery_codes: [...] }，为 10 组一次性恢复码（仅此一次可获取）。',
         notes: ['支持 access/bootstrap token，不支持 API Key。']
       }),
       ep('POST', '/auth/2fa/disable', '关闭 TOTP 2FA', {
         auth: jwtOnly,
         body: 'JSON: password, code',
-        response: 'data: security。',
+        response: 'data: security。关闭 2FA 的同时会清除所有恢复码。',
         notes: ['不支持 API Key。']
+      }),
+      ep('POST', '/auth/2fa/recovery/regen', '重新生成恢复码', {
+        auth: jwtOnly,
+        body: 'JSON: password, code',
+        response: 'recovery: { recovery_codes: [...] }，旧恢复码立即失效。',
+        notes: ['不支持 API Key。', '需要验证当前密码和 2FA 验证码。']
       }),
       ep('GET', '/auth/info', '读取当前用户信息', {
         response: 'data: id, username, role, cloud_type, security。'
@@ -158,9 +164,9 @@ export const endpointGroups = [
         response: 'data: token, username。'
       }),
       ep('POST', '/auth/high-risk/verify', '完成高风险操作二次验证', {
-        body: 'JSON: method(totp/email), code, challenge_id, operation',
-        response: 'data: verification_token, trusted_until。',
-        notes: ['使用 API Key 调用敏感接口时，也需要先调用本接口。']
+        body: 'JSON: method(totp/recovery/email), code, challenge_id, operation',
+        response: 'data: verification_token, trusted_until。recovery 方式额外返回 recovery_codes_remaining。',
+        notes: ['使用 API Key 调用敏感接口时，也需要先调用本接口。', 'recovery 方法传入 16 位恢复码。']
       })
     ]
   },

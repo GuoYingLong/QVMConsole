@@ -64,15 +64,30 @@ service.interceptors.request.use(
 async function promptHighRiskChallenge(data) {
   const method = data?.method
   if (method === 'totp') {
-    const result = await ElMessageBox.prompt('请输入 2FA 验证码', '高风险验证', {
-      confirmButtonText: '验证',
-      cancelButtonText: '取消',
-      inputPattern: /^\d{6}$/,
-      inputErrorMessage: '请输入 6 位验证码'
-    })
+    const hasRecovery = data?.has_recovery
+    const recoveryHint = hasRecovery ? '\n如果您无法使用 2FA 验证器，可使用恢复码。' : ''
+    const result = await ElMessageBox.prompt(
+      `请输入 2FA 验证码${recoveryHint}`,
+      '高风险验证',
+      {
+        confirmButtonText: '验证',
+        cancelButtonText: '取消',
+        inputPattern: /^\S{6,16}$/,
+        inputErrorMessage: '请输入 6 位验证码或 16 位恢复码'
+      }
+    )
+    const inputValue = result.value?.trim() || ''
+    // 自动判断是 6 位 TOTP 验证码还是 16 位恢复码
+    if (hasRecovery && inputValue.length >= 16) {
+      return {
+        method: 'recovery',
+        code: inputValue,
+        operation: data.operation
+      }
+    }
     return {
       method: 'totp',
-      code: result.value,
+      code: inputValue,
       operation: data.operation
     }
   }

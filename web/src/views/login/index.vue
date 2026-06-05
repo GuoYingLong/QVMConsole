@@ -25,8 +25,9 @@
           <p>账户：{{ stageUsername }}</p>
         </div>
         <el-radio-group v-if="allowedMethods.length > 1" v-model="selectedMethod" class="method-switch">
-          <el-radio-button label="totp">2FA</el-radio-button>
-          <el-radio-button label="email">邮箱</el-radio-button>
+          <el-radio-button v-if="allowedMethods.includes('totp')" label="totp">2FA</el-radio-button>
+          <el-radio-button v-if="allowedMethods.includes('recovery')" label="recovery">恢复码</el-radio-button>
+          <el-radio-button v-if="allowedMethods.includes('email')" label="email">邮箱</el-radio-button>
         </el-radio-group>
         <el-alert
           v-if="selectedMethod === 'email'"
@@ -35,9 +36,25 @@
           style="margin-bottom: 16px;"
           :title="`验证码将发送至 ${stageSecurity.masked_email || '已绑定邮箱'}`"
         />
+        <el-alert
+          v-if="selectedMethod === 'recovery'"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 16px;"
+          title="每个恢复码只能使用一次，使用后即失效"
+        />
         <el-form label-width="0">
           <el-form-item>
             <el-input
+              v-if="selectedMethod === 'recovery'"
+              v-model="loginVerifyForm.code"
+              maxlength="16"
+              show-word-limit
+              placeholder="请输入 16 位恢复码"
+              @keyup.enter="submitLoginVerify"
+            />
+            <el-input
+              v-else
               v-model="loginVerifyForm.code"
               maxlength="6"
               show-word-limit
@@ -221,6 +238,40 @@
       </template>
     </el-dialog>
 
+    <!-- 恢复码展示弹窗（仅在绑定 2FA 成功后显示一次） -->
+    <el-dialog
+      v-model="recoveryVisible"
+      title="请保存恢复码"
+      width="520px"
+      append-to-body
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      :show-close="false"
+    >
+      <el-alert
+        type="error"
+        :closable="false"
+        style="margin-bottom: 16px;"
+        title="以下恢复码仅在本次显示，关闭后将无法再次查看。"
+      />
+      <div style="margin-bottom: 8px; font-size: 13px; color: var(--el-text-color-secondary);">
+        当您的 2FA 验证器设备不可用时，可使用恢复码登录。每个恢复码只能使用一次。
+      </div>
+      <div class="recovery-codes-grid">
+        <div v-for="(code, idx) in recoveryCodes" :key="idx" class="recovery-code-item">
+          <span class="code-index">{{ String(idx + 1).padStart(2, '0') }}</span>
+          <code class="code-text">{{ code }}</code>
+        </div>
+      </div>
+      <div style="margin-top: 12px;">
+        <el-button type="primary" @click="copyRecoveryCodes">一键复制所有恢复码</el-button>
+        <el-button @click="downloadRecoveryCodes">下载为文本文件</el-button>
+      </div>
+      <template #footer>
+        <el-button type="primary" @click="confirmRecoveryCodes">我已安全保存</el-button>
+      </template>
+    </el-dialog>
+
     <div class="footer-ack">
       <div class="footer-copy">
         &copy; <a href="https://www.xiaozhuhouses.asia/" target="_blank" rel="noopener noreferrer">本软件由 又菜有爱玩小朱 独立开发并享有所有权</a>
@@ -234,6 +285,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import QRCode from 'qrcode'
 import { ElMessage } from 'element-plus'
+import { copyTextWithFallback } from '@/utils/clipboard'
 import { useUserStore } from '@/store/user'
 import { siteTitle } from '@/utils/site'
 import {
@@ -327,6 +379,50 @@ const savingSMTP = ref(false)
 const testingSMTP = ref(false)
 const generating2FA = ref(false)
 const binding2FA = ref(false)
+
+// 恢复码相关
+const recoveryVisible = ref(false)
+const recoveryCodes = ref([])
+const pendingSession = ref(null)
+
+const holdRecovery = (codes, sessionData) => {
+  recoveryCodes.value = codes || []
+  if (sessionData) {
+    pendingSession.value = sessionData
+  }
+  if (recoveryCodes.value.length > 0) {
+    recoveryVisible.value = true
+  }
+}
+
+const copyRecoveryCodes = async () => {
+  const text = recoveryCodes.value.join('\n')
+  await copyTextWithFallback(text)
+  ElMessage.success('恢复码已复制到剪贴板')
+}
+
+const downloadRecoveryCodes = () => {
+  const text = recoveryCodes.value.join('\n')
+  const blob = new Blob([text], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'qvmconsole-recovery-codes.txt'
+  a.click()
+  URL.revokeObjectURL(url)
+  ElMessage.success('恢复码已下载')
+}
+
+const confirmRecoveryCodes = () => {
+  recoveryVisible.value = false
+  recoveryCodes.value = []
+  if (pendingSession.value) {
+    applySession(pendingSession.value)
+    pendingSession.value = null
+  } else {
+    ElMessage.success('2FA 绑定已完成，请妥善保管恢复码')
+  }
+}
 
 const applySession = (data) => {
   userStore.setToken(data.token)
@@ -505,11 +601,14 @@ const submitBind2FA = async () => {
       code: totpCode.value
     }, stageToken.value)
     if (res.data.stage === 'success') {
-      applySession(res.data)
+      holdRecovery(res.recovery?.recovery_codes, res.data)
+      if (!recoveryVisible.value) {
+        applySession(res.data)
+      }
       return
     }
     Object.assign(stageSecurity, res.data.security || {})
-    ElMessage.success('2FA 绑定成功')
+    holdRecovery(res.recovery?.recovery_codes)
   } finally {
     binding2FA.value = false
   }
@@ -893,5 +992,40 @@ const handleForgotCancel = () => {
   .footer-ack {
     font-size: 11px;
   }
+}
+
+/* 恢复码网格 */
+.recovery-codes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+}
+.recovery-code-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+  border: 1px solid var(--el-border-color-light);
+}
+.code-index {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  min-width: 22px;
+}
+.code-text {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  letter-spacing: 0.5px;
+  word-break: break-all;
+}
+
+/* 深色模式适配 */
+.dark .recovery-code-item {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 </style>

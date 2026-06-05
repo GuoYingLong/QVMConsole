@@ -58,6 +58,7 @@ func Setup() *gin.Engine {
 			secureAuth.POST("/2fa/setup", handler.SetupTOTP)
 			secureAuth.POST("/2fa/enable", handler.EnableTOTP)
 			secureAuth.POST("/2fa/disable", handler.DisableTOTP)
+			secureAuth.POST("/2fa/recovery/regen", handler.RegenRecoveryCodes)
 		}
 
 		// ==================== 高风险验证 ====================
