@@ -324,13 +324,21 @@ ensure_core_services() {
 }
 
 detect_root_size() {
+    # 优先使用更稳健的 df --output 方式获取根分区大小
+    local root_size_gb
+    root_size_gb=$(df --output=size -BG / 2>/dev/null | awk 'NR==2{gsub(/[^0-9]/,"",$1); print $1}')
+    if [ -n "$root_size_gb" ] && [ "$root_size_gb" -gt 0 ] 2>/dev/null; then
+        echo "${root_size_gb}G"
+        return
+    fi
+    # 回退方案：解析 df -k 输出
     local root_size_kb
-    root_size_kb=$(df -k / | awk 'NR==2{print $2}')
+    root_size_kb=$(df -k / 2>/dev/null | awk 'NR==2{print $2}')
     if [ -n "$root_size_kb" ] && [ "$root_size_kb" -gt 0 ] 2>/dev/null; then
         echo "$((root_size_kb / 1024 / 1024))G"
-    else
-        echo "100G"
+        return
     fi
+    echo "100G"
 }
 
 ensure_storage_fstab() {
@@ -355,11 +363,24 @@ setup_quota() {
 
     if [ -f "$STORAGE_IMG" ]; then
         info "检测到已有用户存储镜像，正在挂载..."
-        mount -o loop,prjquota "$STORAGE_IMG" "$STORAGE_MOUNT"
-        quotaon -P "$STORAGE_MOUNT" 2>/dev/null || true
-        ensure_storage_fstab
-        success "用户存储文件系统已挂载"
-        return
+        if mount -o loop,prjquota "$STORAGE_IMG" "$STORAGE_MOUNT" 2>/dev/null; then
+            quotaon -P "$STORAGE_MOUNT" 2>/dev/null || true
+            ensure_storage_fstab
+            success "用户存储文件系统已挂载"
+            return
+        fi
+        # 挂载失败（可能是之前创建时损坏的镜像），允许重新创建
+        warn "现有镜像挂载失败，可能为损坏文件。"
+        read -rp "是否删除现有镜像并重新创建? [Y/n]: " recreate
+        recreate=${recreate:-Y}
+        if [[ "$recreate" =~ ^[Yy]$ ]]; then
+            umount "$STORAGE_MOUNT" 2>/dev/null || true
+            rm -f "$STORAGE_IMG"
+            warn "已删除损坏的镜像，将重新创建"
+        else
+            error "无法挂载用户存储文件系统，请手动检查: $STORAGE_IMG"
+            exit 1
+        fi
     fi
 
     local storage_size
@@ -367,16 +388,29 @@ setup_quota() {
     default_size=$(detect_root_size)
     echo ""
     info "用户存储配额需要创建专用 ext4 project quota 稀疏镜像"
-    read -rp "存储文件系统最大容量 [默认 ${default_size}]: " storage_size
-    storage_size=${storage_size:-$default_size}
+    while true; do
+        read -rp "存储文件系统最大容量 [默认 ${default_size}]: " storage_size
+        storage_size=${storage_size:-$default_size}
+        # 校验格式：必须为数字+可选单位（K/M/G/T），不区分大小写
+        if [[ "$storage_size" =~ ^[0-9]+[kKmMgGtT]?$ ]]; then
+            # 确保有单位后缀（无后缀时默认当作 G）
+            if [[ "$storage_size" =~ ^[0-9]+$ ]]; then
+                storage_size="${storage_size}G"
+            fi
+            break
+        fi
+        warn "无效的大小格式: ${storage_size}，请输入数字+单位，如 300G、1024M"
+    done
+
     read -rp "是否创建用户存储文件系统? [Y/n]: " confirm
     confirm=${confirm:-Y}
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        error "已取消创建用户存储文件系统。该文件系统是“我的存储”配额的基础，请创建后再继续安装"
+        error "已取消创建用户存储文件系统。该文件系统是"我的存储"配额的基础，请创建后再继续安装"
         exit 1
     fi
 
     info "创建用户存储镜像: $STORAGE_IMG ($storage_size)"
+    # 使用 truncate 创建稀疏镜像文件，大小格式已在上方循环中校验
     truncate -s "$storage_size" "$STORAGE_IMG"
     mkfs.ext4 -q -O project,quota "$STORAGE_IMG"
     mount -o loop,prjquota "$STORAGE_IMG" "$STORAGE_MOUNT"
