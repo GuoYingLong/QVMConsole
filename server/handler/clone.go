@@ -44,6 +44,7 @@ type CloneVmRequest struct {
 	MemoryDynamic        *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID             uint                            `json:"switch_id"`
 	SecurityGroupID      uint                            `json:"security_group_id"`
+	ExtraNics            []service.AddVMInterfaceRequest `json:"extra_nics"`
 	StoragePoolID        string                          `json:"storage_pool_id"`
 	ExtraDisks           []service.ExtraDiskParam        `json:"extra_disks"`
 	NicModel             string                          `json:"nic_model"`
@@ -87,6 +88,7 @@ type BatchCloneRequest struct {
 	FirstBootRebootMode string                      `json:"first_boot_reboot_mode"`
 	SwitchID            uint                        `json:"switch_id"`         // VPC 交换机 ID
 	SecurityGroupID     uint                        `json:"security_group_id"` // 安全组 ID
+	ExtraNics           []service.AddVMInterfaceRequest `json:"extra_nics"`
 }
 
 // ReinstallRequest 重装系统请求
@@ -200,6 +202,7 @@ func CloneVm(c *gin.Context) {
 		MemoryDynamic:        req.MemoryDynamic,
 		SwitchID:             req.SwitchID,
 		SecurityGroupID:      req.SecurityGroupID,
+		ExtraNics:            req.ExtraNics,
 		StoragePoolID:        req.StoragePoolID,
 		ExtraDisks:           req.ExtraDisks,
 		NicModel:             req.NicModel,
@@ -342,6 +345,7 @@ func BatchCloneVm(c *gin.Context) {
 		FirstBootRebootMode: req.FirstBootRebootMode,
 		SwitchID:            req.SwitchID,
 		SecurityGroupID:     req.SecurityGroupID,
+		ExtraNics:           req.ExtraNics,
 		IsAdmin:             isAdmin,
 	}
 

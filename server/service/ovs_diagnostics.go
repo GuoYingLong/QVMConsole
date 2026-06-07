@@ -681,22 +681,30 @@ func readVMNetworkXML(vmName string) []ovsInterfaceXML {
 func resolveVMIPByMAC(vmName, mac string, running bool) (string, string) {
 	mac = normalizeMAC(mac)
 	if running {
-		if ip, ok := firstVirshDomifaddrIP(vmName, "agent"); ok {
-			return ip, "guest_agent"
-		}
-		if ip := GetVPCLeaseIPForVM(vmName); ip != "" {
-			return ip, "ovs_dhcp"
-		}
+		// 优先尝试 MAC 级别的查找（多网口场景下每个接口独立解析）
 		if ip := GetOVSStaticIPByMAC(mac); ip != "" {
 			return ip, "static"
 		}
 		if ip := GetOVSLeaseIPByMAC(mac); ip != "" {
 			return ip, "ovs_dhcp"
 		}
-		if ip, ok := firstVirshDomifaddrIP(vmName, "arp"); ok {
+		// ARP 查找（桥接直通模式的主要 IP 来源，按 MAC 匹配）
+		if ip, ok := virshDomifaddrIPByMAC(vmName, "arp", mac); ok {
 			return ip, "arp"
 		}
-		if ip, ok := firstVirshDomifaddrIP(vmName, "lease"); ok {
+		// ip neigh 补充查询（纯二层桥接的 host 不会主动学习 VM 的 ARP，但 ip neigh 可能已有记录）
+		if ip, ok := ipNeighIPByMAC(mac); ok {
+			return ip, "arp"
+		}
+		// 再尝试 VPC 级别查找（按 MAC 定位对应交换机的租约）
+		if ip := GetVPCLeaseIPForVMByMAC(vmName, mac); ip != "" {
+			return ip, "vpc_dhcp"
+		}
+		// MAC 级别的全局兜底（agent / lease 也按 MAC 匹配，避免多网口交叉混淆）
+		if ip, ok := virshDomifaddrIPByMAC(vmName, "agent", mac); ok {
+			return ip, "guest_agent"
+		}
+		if ip, ok := virshDomifaddrIPByMAC(vmName, "lease", mac); ok {
 			return ip, "libvirt_lease"
 		}
 	}
@@ -716,6 +724,64 @@ func firstVirshDomifaddrIP(vmName, source string) (string, bool) {
 	for _, match := range matches {
 		ip := match[1]
 		if ip != "127.0.0.1" && net.ParseIP(ip) != nil {
+			return ip, true
+		}
+	}
+	return "", false
+}
+
+// virshDomifaddrIPByMAC 按 MAC 地址从 domifaddr 输出中解析 IP
+// 输出格式: Name MAC Protocol Address
+// vnet0    52:54:00:42:71:74    ipv4    10.200.1.76/24
+func virshDomifaddrIPByMAC(vmName, source, targetMAC string) (string, bool) {
+	targetMAC = strings.ToLower(strings.TrimSpace(targetMAC))
+	if targetMAC == "" {
+		return "", false
+	}
+	result := utils.ExecCommand("virsh", "domifaddr", vmName, "--source", source)
+	if result.Error != nil {
+		return "", false
+	}
+	lines := strings.Split(result.Stdout, "\n")
+	macRe := regexp.MustCompile(`([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})`)
+	ipRe := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)(?:/\d+)?`)
+	for _, line := range lines {
+		lineMAC := strings.ToLower(strings.TrimSpace(macRe.FindString(line)))
+		if lineMAC != targetMAC {
+			continue
+		}
+		ip := ipRe.FindString(line)
+		if ip != "" && ip != "127.0.0.1" && net.ParseIP(ip) != nil {
+			return ip, true
+		}
+	}
+	return "", false
+}
+
+// ipNeighIPByMAC 从 host 的 ip neigh 表中按 MAC 查找 IP
+// 格式: 192.168.11.197 dev bg lladdr 52:54:00:01:7c:5c REACHABLE
+func ipNeighIPByMAC(targetMAC string) (string, bool) {
+	targetMAC = strings.ToLower(strings.TrimSpace(targetMAC))
+	if targetMAC == "" {
+		return "", false
+	}
+	result := utils.ExecCommand("ip", "neigh", "show")
+	if result.Error != nil {
+		return "", false
+	}
+	macRe := regexp.MustCompile(`([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})`)
+	ipRe := regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+)`)
+	for _, line := range strings.Split(result.Stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		lineMAC := strings.ToLower(strings.TrimSpace(macRe.FindString(line)))
+		if lineMAC != targetMAC {
+			continue
+		}
+		ip := ipRe.FindString(line)
+		if ip != "" && net.ParseIP(ip) != nil {
 			return ip, true
 		}
 	}

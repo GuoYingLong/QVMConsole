@@ -105,6 +105,7 @@ func registerTaskHandlers() {
 		if err := bindTaskVMToVPC(task.CreatedBy, params.Name, params.SwitchID, params.SecurityGroupID); err != nil {
 			return "", fmt.Errorf("克隆完成，但绑定 VPC 网络失败: %w", err)
 		}
+		attachTaskExtraNICs(params.Name, task.Params)
 		// 应用 IOPS 限制
 		applyCloneIOPS(params)
 		if saveErr := service.SaveVMCredential(params.Name, params.User, params.Password, "clone", task.CreatedBy, false); saveErr != nil {
@@ -136,6 +137,7 @@ func registerTaskHandlers() {
 		if err := bindTaskVMToVPC(task.CreatedBy, params.Name, params.SwitchID, params.SecurityGroupID); err != nil {
 			return "", fmt.Errorf("原生链式克隆完成，但绑定 VPC 网络失败: %w", err)
 		}
+		attachTaskExtraNICs(params.Name, task.Params)
 		// 应用 IOPS 限制
 		applyLinkedCloneIOPS(params)
 		refreshVMCacheAfterTask(params.Name)
@@ -160,6 +162,7 @@ func registerTaskHandlers() {
 			if err := bindTaskVMToVPC(task.CreatedBy, result.VMName, params.SwitchID, params.SecurityGroupID); err != nil {
 				log.Printf("[警告] 批量克隆 %s 绑定 VPC 失败: %v", result.VMName, err)
 			}
+			attachTaskExtraNICs(result.VMName, task.Params)
 			// 每台 VM 可能使用独立随机密码，优先用 result.Password
 			credPassword := result.Password
 			if credPassword == "" {
@@ -266,6 +269,7 @@ func registerTaskHandlers() {
 		if err := bindTaskVMToVPC(task.CreatedBy, params.Name, params.SwitchID, params.SecurityGroupID); err != nil {
 			return "", fmt.Errorf("虚拟机创建完成，但绑定 VPC 网络失败: %w", err)
 		}
+		attachTaskExtraNICs(params.Name, task.Params)
 		refreshVMCacheAfterTask(params.Name)
 		resultJSON, _ := json.Marshal(map[string]string{
 			"vm_name":   params.Name,
@@ -532,6 +536,7 @@ func registerTaskHandlers() {
 		if err := bindTaskVMToVPC(params.Username, params.Name, params.SwitchID, params.SecurityGroupID); err != nil {
 			return "", fmt.Errorf("导入完成，但绑定 VPC 网络失败: %w", err)
 		}
+		attachTaskExtraNICs(params.Name, task.Params)
 		if saveErr := service.SaveVMCredential(params.Name, params.User, params.Password, "import", task.CreatedBy, false); saveErr != nil {
 			log.Printf("[警告] 保存虚拟机 %s 的导入凭据失败: %v", params.Name, saveErr)
 		}
@@ -552,6 +557,7 @@ func registerTaskHandlers() {
 		if err := bindTaskVMToVPC(params.Username, params.Name, params.SwitchID, params.SecurityGroupID); err != nil {
 			return "", fmt.Errorf("导入完成，但绑定 VPC 网络失败: %w", err)
 		}
+		attachTaskExtraNICs(params.Name, task.Params)
 		// 应用 IOPS 限制
 		applyImportDiskIOPS(params)
 		if saveErr := service.SaveVMCredential(params.Name, params.User, params.Password, "import_disk", task.CreatedBy, false); saveErr != nil {
@@ -767,6 +773,17 @@ func bindTaskVMToVPC(owner, vmName string, switchID, securityGroupID uint) error
 	}
 	log.Printf("[VPC] VM %s 已自动绑定到用户 %s 的交换机 %d / 安全组 %d", vmName, owner, switchID, securityGroupID)
 	return nil
+}
+
+// attachTaskExtraNICs 从任务参数中提取额外网口配置并附加到虚拟机
+func attachTaskExtraNICs(vmName string, paramsJSON string) {
+	var raw struct {
+		ExtraNics []service.AddVMInterfaceRequest `json:"extra_nics"`
+	}
+	if err := json.Unmarshal([]byte(paramsJSON), &raw); err != nil || len(raw.ExtraNics) == 0 {
+		return
+	}
+	service.AttachExtraNICs(vmName, raw.ExtraNics)
 }
 
 func refreshVMCacheAfterTask(vmName string) {

@@ -118,6 +118,10 @@ func Setup() *gin.Engine {
 				vm.POST("/:name/migration/preview", middleware.AdminMiddleware(), handler.PreviewVMMigration)
 				vm.POST("/:name/migrate", middleware.AdminMiddleware(), handler.MigrateVM)
 				vm.PUT("/:name/security-group", handler.SwitchVMSecurityGroup)
+				// 多网口管理（仅管理员）
+				vm.GET("/:name/interfaces", handler.ListVMInterfaces)
+				vm.POST("/:name/interfaces", handler.AddVMInterface)
+				vm.DELETE("/:name/interfaces/:order", handler.RemoveVMInterface)
 				vm.DELETE("/:name", middleware.ElasticCloudOnlyMiddleware(), handler.DeleteVm)
 				vm.GET("/:name/qcow2-disks", handler.GetVmQcow2Disks)
 

@@ -260,3 +260,60 @@ func SwitchVMSecurityGroup(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "安全组已切换"})
 }
+
+// ==================== 多网口管理（仅管理员） ====================
+
+// ListVMInterfaces 列出虚拟机所有网口绑定
+func ListVMInterfaces(c *gin.Context) {
+	_, role := currentUserAndRole(c)
+	if role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "仅管理员可管理多网口"})
+		return
+	}
+	interfaces, err := service.ListVMInterfaces(c.Param("name"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "ok", "data": interfaces})
+}
+
+// AddVMInterface 为虚拟机新增网口
+func AddVMInterface(c *gin.Context) {
+	_, role := currentUserAndRole(c)
+	if role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "仅管理员可管理多网口"})
+		return
+	}
+	var req service.AddVMInterfaceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	info, err := service.AddVMInterface(c.Param("name"), req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "网口已添加", "data": info})
+}
+
+// RemoveVMInterface 删除虚拟机指定网口
+func RemoveVMInterface(c *gin.Context) {
+	_, role := currentUserAndRole(c)
+	if role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": "仅管理员可管理多网口"})
+		return
+	}
+	orderStr := c.Param("order")
+	order, err := strconv.Atoi(orderStr)
+	if err != nil || order < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "网口序号无效"})
+		return
+	}
+	if err := service.RemoveVMInterface(c.Param("name"), order); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "网口已删除"})
+}

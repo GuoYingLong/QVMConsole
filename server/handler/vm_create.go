@@ -45,6 +45,7 @@ type CreateVmRequest struct {
 	MemoryDynamic   *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID        uint                            `json:"switch_id"`
 	SecurityGroupID uint                            `json:"security_group_id"`
+	ExtraNics       []service.AddVMInterfaceRequest `json:"extra_nics"`
 	StoragePoolID   string                          `json:"storage_pool_id"`
 	SystemDiskIOPS  *service.DiskIOPSTune           `json:"system_disk_iops"` // 系统盘 IOPS 限制（仅管理员）
 	HostDevices     []service.HostDeviceParam       `json:"host_devices"`      // 硬件直通设备
@@ -118,6 +119,7 @@ func CreateVm(c *gin.Context) {
 		MemoryDynamic:   req.MemoryDynamic,
 		SwitchID:        req.SwitchID,
 		SecurityGroupID: req.SecurityGroupID,
+		ExtraNics:       req.ExtraNics,
 		StoragePoolID:   req.StoragePoolID,
 		SystemDiskIOPS:  req.SystemDiskIOPS,
 		HostDevices:     req.HostDevices,
@@ -265,6 +267,7 @@ type ImportDiskByPathRequest struct {
 	MemoryDynamic    *service.VMMemoryDynamicRequest  `json:"memory_dynamic"`
 	SwitchID         uint                             `json:"switch_id"`
 	SecurityGroupID  uint                             `json:"security_group_id"`
+	ExtraNics        []service.AddVMInterfaceRequest  `json:"extra_nics"`
 	ExtraImportDisks []service.ExtraImportDiskEntry    `json:"extra_import_disks"`
 	SystemDiskIOPS   *service.DiskIOPSTune            `json:"system_disk_iops"` // 系统盘 IOPS 限制（仅管理员）
 	StartAfterImport *bool                            `json:"start_after_import"` // 导入完成后是否开启虚拟机，不传默认 true
@@ -338,6 +341,7 @@ func AdminImportDisk(c *gin.Context) {
 		MemoryDynamic:    req.MemoryDynamic,
 		SwitchID:         req.SwitchID,
 		SecurityGroupID:  req.SecurityGroupID,
+		ExtraNics:        req.ExtraNics,
 		ExtraImportDisks: req.ExtraImportDisks,
 		Username:         usernameStr,
 		SystemDiskIOPS:   req.SystemDiskIOPS,

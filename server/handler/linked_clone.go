@@ -38,6 +38,7 @@ type LinkedCloneVmRequest struct {
 	MemoryDynamic       *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID            uint                            `json:"switch_id"`
 	SecurityGroupID     uint                            `json:"security_group_id"`
+	ExtraNics           []service.AddVMInterfaceRequest `json:"extra_nics"`
 	StoragePoolID       string                          `json:"storage_pool_id"`
 	ExtraDisks          []service.ExtraDiskParam        `json:"extra_disks"`
 	NicModel            string                          `json:"nic_model"`
@@ -111,6 +112,7 @@ func LinkedCloneVm(c *gin.Context) {
 		MemoryDynamic:       req.MemoryDynamic,
 		SwitchID:            req.SwitchID,
 		SecurityGroupID:     req.SecurityGroupID,
+		ExtraNics:           req.ExtraNics,
 		StoragePoolID:       req.StoragePoolID,
 		ExtraDisks:          req.ExtraDisks,
 		NicModel:            req.NicModel,

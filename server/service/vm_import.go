@@ -49,6 +49,7 @@ type ImportVMParams struct {
 	MemoryDynamic     *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SwitchID          uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID   uint                    `json:"security_group_id,omitempty"`
+	ExtraNics         []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
 	IsAdmin           bool                    `json:"is_admin,omitempty"`
 	StartAfterImport  bool                    `json:"start_after_import"` // 导入完成后是否开启虚拟机，默认 true
 }
@@ -610,6 +611,7 @@ type ImportDiskByPathParams struct {
 	MemoryDynamic    *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SwitchID         uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID  uint                    `json:"security_group_id,omitempty"`
+	ExtraNics        []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
 	CopyDisk         bool                    `json:"copy_disk,omitempty"`
 	ExtraImportDisks []ExtraImportDiskEntry  `json:"extra_import_disks,omitempty"` // 额外导入磁盘列表
 	Username         string                  `json:"username,omitempty"` // 所属用户（存储模式需要）

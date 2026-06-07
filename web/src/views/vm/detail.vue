@@ -56,6 +56,13 @@
                 <code class="hero-ip-value" :class="{ 'ip-unreachable': ipTooltipText }">{{ ipDisplayText }}</code>
               </el-tooltip>
             </span>
+            <span v-if="hasMultipleIPs" class="meta-divider"></span>
+            <span v-if="hasMultipleIPs" class="meta-item hero-ip-label">
+              <el-icon><Connection /></el-icon> 更多
+              <el-tooltip :content="allIPsDisplayText" placement="top" effect="dark">
+                <code class="hero-ip-value" style="color: var(--el-color-success); background: var(--el-color-success-light-9);">{{ allIPsDisplayText }}</code>
+              </el-tooltip>
+            </span>
             <span v-if="publicIPs.length" class="meta-divider"></span>
             <span v-if="publicIPs.length" class="meta-item hero-ip-label">
               <el-icon><Location /></el-icon> 公网
@@ -398,6 +405,12 @@
                     </el-tooltip>
                   </span>
                 </div>
+                <div v-if="hasMultipleIPs" class="info-row">
+                  <span class="info-label">全部 IP</span>
+                  <span class="info-value mono ip-highlight" style="color: var(--el-color-success); flex-wrap: wrap; gap: 4px;">
+                    <code v-for="ip in allInterfaceIPs" :key="ip" class="credential-code" style="margin: 2px;">{{ ip }}</code>
+                  </span>
+                </div>
                 <div class="info-row">
                   <span class="info-label">公网 IP</span>
                   <span class="info-value public-ip-list">
@@ -653,7 +666,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { createVmDetailSSE, operateVm, resetVmLinuxPassword, lockVm, unlockVm } from '@/api/vm'
-import { getDiskList } from '@/api/vm'
+import { getDiskList, getVMNetworkStatus } from '@/api/vm'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import SnapshotList from '@/components/SnapshotList.vue'
 import NetworkList from '@/components/NetworkList.vue'
@@ -746,6 +759,25 @@ const ipDisplayText = computed(() => {
   if (vmInfo.ip_status) return '无法获取'
   return '获取中...'
 })
+// 多网口 IP 列表
+const allInterfaceIPs = ref([])
+const hasMultipleIPs = computed(() => allInterfaceIPs.value.length > 0)
+const allIPsDisplayText = computed(() => {
+  return allInterfaceIPs.value.join(', ')
+})
+const fetchAllInterfaceIPs = async () => {
+  try {
+    const res = await getVMNetworkStatus(vmName.value)
+    const ifaces = res.data?.interfaces || []
+    const ips = ifaces
+      .filter(i => i.ip && i.ip !== '0.0.0.0')
+      .map(i => i.ip)
+    // 去重
+    allInterfaceIPs.value = [...new Set(ips)]
+  } catch {
+    allInterfaceIPs.value = []
+  }
+}
 const ipTooltipText = computed(() => {
   if (vmInfo.ip) return ''
   if (vmInfo.ip_status === 'vlan_bridge') return '桥接 VLAN 模式下上游路由器分配的 IP 无法从宿主机获取'
@@ -1139,6 +1171,8 @@ const initSSE = () => {
             initLazySections()
             observeLazySections()
           })
+          // 获取所有网口 IP
+          fetchAllInterfaceIPs()
         }
       }
     } catch (e) {

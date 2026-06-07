@@ -42,6 +42,7 @@ type LinkedCloneParams struct {
 	MemoryDynamic       *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SwitchID            uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID     uint                    `json:"security_group_id,omitempty"`
+	ExtraNics           []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
 	StoragePoolID       string                  `json:"storage_pool_id,omitempty"`
 	ExtraDisks          []ExtraDiskParam        `json:"extra_disks,omitempty"`
 	NicModel            string                  `json:"nic_model,omitempty"`

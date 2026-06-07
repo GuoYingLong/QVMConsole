@@ -76,6 +76,7 @@ type CloneParams struct {
 	MemoryDynamic         *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SwitchID              uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID       uint                    `json:"security_group_id,omitempty"`
+	ExtraNics             []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
 	StoragePoolID         string                  `json:"storage_pool_id,omitempty"`
 	ExtraDisks            []ExtraDiskParam        `json:"extra_disks,omitempty"`
 	NicModel              string                  `json:"nic_model,omitempty"` // 网卡模型: virtio/e1000e/rtl8139
@@ -122,6 +123,7 @@ type BatchCloneParams struct {
 	StoragePoolID       string                  `json:"storage_pool_id,omitempty"`        // 存储池
 	SwitchID            uint                    `json:"switch_id,omitempty"`               // VPC 交换机 ID
 	SecurityGroupID     uint                    `json:"security_group_id,omitempty"`      // 安全组 ID
+	ExtraNics           []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
 	IsAdmin             bool                    `json:"is_admin,omitempty"`               // 是否管理员
 }
 

@@ -912,6 +912,7 @@
                 </el-form-item>
               </div>
             </div>
+
           </div>
         </div>
 
@@ -1424,6 +1425,69 @@
                   <el-input-number v-model="form.max_runtime_hours" :min="0" style="width: 100%;" />
                   <div class="form-tip"><el-icon><InfoFilled /></el-icon>设为 0 表示不限制；到时系统会自动关机并提前邮件提醒。</div>
                 </el-form-item>
+              </div>
+            </div>
+
+            <!-- 多网口配置（仅管理员，创建/批量模式） -->
+            <div v-if="isAdmin && !registrationMode" class="form-section-card">
+              <div class="form-section-card-header">
+                <el-icon><Plus /></el-icon>
+                <span>额外网口（可选）</span>
+                <el-button size="small" type="primary" plain style="margin-left: auto;" @click="addExtraNic">
+                  <el-icon><Plus /></el-icon> 添加网口
+                </el-button>
+              </div>
+              <div class="form-section-card-body" v-if="extraNics.length > 0">
+                <div
+                  v-for="(nic, index) in extraNics"
+                  :key="index"
+                  class="extra-nic-row"
+                >
+                  <div class="extra-nic-header">
+                    <el-tag size="small" type="info">网口 #{{ index + 2 }}</el-tag>
+                    <el-button size="small" type="danger" text @click="removeExtraNic(index)">
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </div>
+                  <el-row :gutter="16">
+                    <el-col :span="8">
+                      <el-form-item label="网卡型号" style="margin-bottom: 8px;" label-width="80px">
+                        <el-select :model-value="nic.nic_model" style="width: 100%;" @update:model-value="(v) => nic.nic_model = v">
+                          <el-option label="VirtIO" value="virtio" />
+                          <el-option label="e1000e (Intel)" value="e1000e" />
+                          <el-option label="rtl8139" value="rtl8139" />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                      <el-form-item label="VPC 交换机" style="margin-bottom: 8px;" label-width="85px">
+                        <el-select :model-value="nic.switch_id" placeholder="选择交换机" style="width: 100%;" filterable @update:model-value="(v) => nic.switch_id = v" @focus="loadVPCOptions">
+                          <el-option
+                            v-for="item in vpcSwitches"
+                            :key="item.id"
+                            :label="switchOptionLabelNic(item)"
+                            :value="item.id"
+                          />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                    <el-col :span="8">
+                      <el-form-item label="安全组" style="margin-bottom: 8px;" label-width="60px">
+                        <el-select :model-value="nic.security_group_id" placeholder="可选" style="width: 100%;" filterable @update:model-value="(v) => nic.security_group_id = v" @focus="loadVPCOptions">
+                          <el-option
+                            v-for="item in vpcSecurityGroups"
+                            :key="item.id"
+                            :label="item.is_default ? `${item.name}（默认）` : item.name"
+                            :value="item.id"
+                          />
+                        </el-select>
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                </div>
+              </div>
+              <div v-else class="form-section-card-body">
+                <el-empty description="暂无额外网口，点击上方「添加网口」为虚拟机配置多网卡" :image-size="48" />
               </div>
             </div>
           </div>
@@ -2255,7 +2319,7 @@ import { selfCloneVm } from '@/api/user'
 import { getVPCSecurityGroups, getVPCSwitches } from '@/api/vpc'
 import { getCPUAffinityPresets } from '@/api/settings'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Top, Bottom, Delete, ArrowRight } from '@element-plus/icons-vue'
+import { Top, Bottom, Delete, Plus, ArrowRight } from '@element-plus/icons-vue'
 import FormIcons from '@/components/icons/FormIcons.vue'
 import { useUserStore } from '@/store/user'
 import { templateCategoryLabel, templateGroupLabel } from '@/utils/templateCategory'
@@ -3193,6 +3257,38 @@ const templates = ref([])
 const vpcSwitches = ref([])
 const vpcSecurityGroups = ref([])
 const selectedVPCSwitch = computed(() => vpcSwitches.value.find(item => item.id === form.switch_id))
+// 额外网口（仅管理员多网口功能）
+const extraNics = ref([])
+const addExtraNic = () => {
+  extraNics.value.push({
+    nic_model: form.nic_model || 'virtio',
+    switch_id: vpcSwitches.value.length > 0 ? vpcSwitches.value[0].id : null,
+    security_group_id: null
+  })
+}
+const removeExtraNic = (index) => {
+  extraNics.value.splice(index, 1)
+}
+const switchOptionLabelNic = (item) => {
+  const prefix = isAdmin.value && item.username ? `${item.username} / ` : ''
+  if (item.bridge_mode === 'bridge') {
+    const vlan = item.bridge_vlan_id > 0 ? `，VLAN ${item.bridge_vlan_id}` : ''
+    return `${prefix}${item.name}（桥接直通：${item.bridge_name || '-'}${vlan}）`
+  }
+  return `${prefix}${item.name} (${item.cidr})`
+}
+const getExtraNicSwitch = (nic) => vpcSwitches.value.find(item => item.id === nic.switch_id) || null
+
+// 构建额外网口提交数据
+const buildExtraNicsPayload = () => {
+  return extraNics.value
+    .filter(n => n.switch_id)
+    .map(n => ({
+      switch_id: n.switch_id,
+      security_group_id: n.security_group_id || 0,
+      nic_model: n.nic_model || 'virtio'
+    }))
+}
 const storageTargets = ref([])
 const storageTargetsLoading = ref(false)
 const selectedStorageTargetLabel = computed(() => {
@@ -4494,6 +4590,7 @@ const onClosed = () => {
   registrationContext.dedicated_vpc_switch_id = 0
   registrationContext.dedicated_vpc_label = ''
   initAdvancedIntro()
+  extraNics.value = []
   formRef.value?.resetFields()
 }
 
@@ -4601,6 +4698,7 @@ const submitForm = async () => {
               nic_model: form.nic_model, video_model: form.video_model,
               cpu_topology_mode: form.cpu_topology_mode,
               first_boot_reboot_mode: form.first_boot_reboot_mode,
+              extra_nics: buildExtraNicsPayload(),
               extra_import_disks: form.extra_import_disks.filter(d => d.disk_path || d.disk_file).map(d => ({
                 disk_path: d.disk_path,
                 disk_file: d.disk_file,
@@ -4657,6 +4755,7 @@ const submitForm = async () => {
             video_model: form.video_model,
             cpu_topology_mode: form.cpu_topology_mode,
             first_boot_reboot_mode: form.first_boot_reboot_mode,
+            extra_nics: buildExtraNicsPayload(),
           }
           const cpuLimitPercent = buildCPULimitPercentPayload()
           if (cpuLimitPercent !== undefined) {
@@ -4698,6 +4797,7 @@ const submitForm = async () => {
             video_model: form.video_model,
             cpu_topology_mode: form.cpu_topology_mode,
             first_boot_reboot_mode: form.first_boot_reboot_mode,
+            extra_nics: buildExtraNicsPayload(),
             extra_disks: form.extra_disks.filter(d => d.size > 0).map(d => ({
               size: d.size,
               format: d.format,
@@ -4760,6 +4860,7 @@ const submitForm = async () => {
               first_boot_reboot_mode: form.first_boot_reboot_mode,
               switch_id: form.switch_id || 0,
               security_group_id: form.security_group_id || 0,
+              extra_nics: buildExtraNicsPayload(),
             }
             const cpuLimitPercent = buildCPULimitPercentPayload()
             if (cpuLimitPercent !== undefined) { batchPayload.cpu_limit_percent = cpuLimitPercent }
@@ -4806,6 +4907,7 @@ const submitForm = async () => {
             video_model: form.video_model,
             cpu_topology_mode: form.cpu_topology_mode,
             first_boot_reboot_mode: form.first_boot_reboot_mode,
+            extra_nics: buildExtraNicsPayload(),
             preserve_fnos_device_id: shouldPreserveFnOSDeviceID.value,
             fnos_device_id: hasCustomFnOSDeviceID.value ? normalizedFnOSDeviceID.value : '',
             extra_disks: form.extra_disks.filter(d => d.size > 0).map(d => ({
@@ -4924,6 +5026,7 @@ const submitForm = async () => {
               iops_write: d.iops_write || 0,
             })),
             host_devices: form.host_devices,
+            extra_nics: buildExtraNicsPayload(),
           }
           const cpuLimitPercent = buildCPULimitPercentPayload()
           if (cpuLimitPercent !== undefined) {
@@ -6377,4 +6480,19 @@ html.dark .pr-value.highlight { color: var(--el-color-primary-light-3); }
 html.dark .preview-total { border-top-color: var(--app-border-light); }
 html.dark .total-label { color: var(--el-text-color-primary); }
 html.dark .total-value { color: var(--el-color-primary-light-3); }
+
+/* 多网口样式 */
+.extra-nic-row {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: var(--el-fill-color-lighter);
+}
+.extra-nic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
 </style>

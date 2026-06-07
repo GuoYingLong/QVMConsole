@@ -39,6 +39,7 @@ func InitDB() {
 	hadLightweightRegistrationMaxSnapshotsColumn := DB.Migrator().HasColumn(&LightweightVMRegistration{}, "max_snapshots")
 	hadLightweightQuotaMaxRuntimeColumn := DB.Migrator().HasColumn(&LightweightVMQuota{}, "max_runtime_hours")
 	hadLightweightRegistrationMaxRuntimeColumn := DB.Migrator().HasColumn(&LightweightVMRegistration{}, "max_runtime_hours")
+	hadVPCBindingInterfaceOrderColumn := DB.Migrator().HasColumn(&VPCVMBinding{}, "interface_order")
 
 	// 自动迁移表结构
 	if err := DB.AutoMigrate(&User{}, &UserAPIKey{}, &VmStatsRecord{}, &PortForwardIP{}, &PortForwardWhitelist{}, &PortForwardProbeState{}, &HostStatsRecord{}, &UserTrafficDaily{}, &SystemSetting{}, &VMCredential{}, &VMCache{}, &AuthActionToken{}, &SecurityChallenge{}, &SchedulerEvent{}, &VMSchedule{}, &NetworkBridge{}, &HostStoragePool{}, &HostNode{},
@@ -54,6 +55,7 @@ func InitDB() {
 	migrateUserSnapshotQuota(hadUserMaxSnapshotsColumn)
 	migrateLightweightSnapshotQuota(hadLightweightQuotaMaxSnapshotsColumn, hadLightweightRegistrationMaxSnapshotsColumn)
 	migrateLightweightRuntimeQuota(hadLightweightQuotaMaxRuntimeColumn, hadLightweightRegistrationMaxRuntimeColumn)
+	migrateVPCBindingInterfaceOrder(hadVPCBindingInterfaceOrderColumn)
 
 	// 兼容旧用户：补齐默认状态，确保升级后能继续登录
 	if err := DB.Model(&User{}).Where("status = '' OR status IS NULL").Updates(map[string]interface{}{
@@ -160,6 +162,49 @@ func migratePublicIPCIDRColumn() {
 	}
 	if err := DB.Exec("UPDATE public_ips SET cidr = c_id_r WHERE (cidr IS NULL OR cidr = '') AND c_id_r IS NOT NULL AND c_id_r <> ''").Error; err != nil {
 		log.Printf("迁移公网 IP CIDR 字段失败: %v", err)
+	}
+}
+
+func migrateVPCBindingInterfaceOrder(hadColumn bool) {
+	if DB == nil {
+		return
+	}
+	// 修复联合唯一索引：从 vm_name 单列索引迁移到 (vm_name, interface_order) 联合索引
+	// GORM AutoMigrate 可能无法正确重建索引，需要手动处理
+	if !hadColumn {
+		// 首次迁移：填充默认值
+		if err := DB.Model(&VPCVMBinding{}).
+			Where("interface_order IS NULL OR interface_order = 0").
+			Update("interface_order", 0).Error; err != nil {
+			log.Printf("初始化 VPC 绑定 interface_order 失败: %v", err)
+		}
+		if err := DB.Model(&VPCVMBinding{}).
+			Where("nic_model IS NULL OR nic_model = ''").
+			Update("nic_model", "virtio").Error; err != nil {
+			log.Printf("初始化 VPC 绑定 nic_model 失败: %v", err)
+		}
+	}
+
+	// 始终确保索引正确：删除可能的旧单列唯一索引，创建新联合唯一索引
+	migrateVPCBindingUniqueIndex()
+}
+
+func migrateVPCBindingUniqueIndex() {
+	if DB == nil {
+		return
+	}
+	// GORM 可能生成多种索引名称，逐一尝试删除旧索引
+	oldIndexNames := []string{
+		"uni_vpc_vm_bindings_vm_name",
+		"idx_vpc_vm_bindings_vm_name",
+		"uq_vpc_vm_bindings_vm_name",
+	}
+	for _, name := range oldIndexNames {
+		DB.Exec("DROP INDEX IF EXISTS " + name)
+	}
+	// 创建新的联合唯一索引
+	if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_vm_interface ON vpc_vm_bindings(vm_name, interface_order)").Error; err != nil {
+		log.Printf("创建 VPC 绑定联合唯一索引失败: %v", err)
 	}
 }
 

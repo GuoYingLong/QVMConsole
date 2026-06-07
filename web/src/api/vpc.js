@@ -71,3 +71,16 @@ export function switchVMSecurityGroup(name, securityGroupID) {
     data: { security_group_id: securityGroupID }
   })
 }
+
+// 多网口管理（仅管理员）
+export function listVMInterfaces(name) {
+  return request({ url: `/vm/${name}/interfaces`, method: 'get' })
+}
+
+export function addVMInterface(name, data) {
+  return request({ url: `/vm/${name}/interfaces`, method: 'post', data })
+}
+
+export function removeVMInterface(name, order) {
+  return request({ url: `/vm/${name}/interfaces/${order}`, method: 'delete' })
+}

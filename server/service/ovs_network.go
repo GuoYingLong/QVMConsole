@@ -897,6 +897,44 @@ func GetOVSLeaseIPByMAC(mac string) string {
 	return latest.IP
 }
 
+// GetVPCLeaseIPForVMByMAC 按 MAC 地址查找对应 VPC 交换机的 DHCP 租约 IP（多网口场景）
+func GetVPCLeaseIPForVMByMAC(vmName, mac string) string {
+	vmName = strings.TrimSpace(vmName)
+	mac = strings.ToLower(strings.TrimSpace(mac))
+	if vmName == "" || mac == "" || model.DB == nil {
+		return ""
+	}
+	// 查找该 VM 的所有 VPC 绑定
+	var bindings []model.VPCVMBinding
+	if err := model.DB.Where("vm_name = ?", vmName).Order("interface_order ASC").Find(&bindings).Error; err != nil || len(bindings) == 0 {
+		return ""
+	}
+	// 遍历每个绑定，检查对应交换机的租约和静态绑定
+	for _, binding := range bindings {
+		// 先查静态绑定
+		if ip := GetVPCStaticIPByMAC(binding.SwitchID, mac); ip != "" {
+			return ip
+		}
+		// 再查 DHCP 租约
+		leasesPath := filepath.Join(vpcConfigDir, fmt.Sprintf("leases-%d", binding.SwitchID))
+		data, err := os.ReadFile(leasesPath)
+		if err != nil {
+			continue
+		}
+		leases := ParseOVSDHCPLeasesText(string(data))
+		var latest OVSDHCPLease
+		for _, lease := range leases {
+			if strings.EqualFold(lease.MAC, mac) {
+				latest = newerOVSDHCPLease(latest, lease)
+			}
+		}
+		if latest.IP != "" {
+			return latest.IP
+		}
+	}
+	return ""
+}
+
 func GetVPCLeaseIPForVM(vmName string) string {
 	vmName = strings.TrimSpace(vmName)
 	if vmName == "" || model.DB == nil {
