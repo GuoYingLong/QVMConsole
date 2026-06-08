@@ -220,9 +220,15 @@ func queueDueVMSchedule(schedule model.VMSchedule, now time.Time) error {
 		return err
 	}
 
+	// 将触发时间转换为定时任务配置的时区，确保前后端显示一致
+	triggerTime := now
+	if loc, _, locErr := resolveScheduleLocation(schedule.Timezone); locErr == nil {
+		triggerTime = now.In(loc)
+	}
+
 	updates := map[string]interface{}{
 		"last_task_id":      task.ID,
-		"last_triggered_at": now,
+		"last_triggered_at": triggerTime,
 		"last_status":       VMScheduleExecStatusPending,
 		"last_message":      fmt.Sprintf("已提交任务中心，任务 #%d 等待执行", task.ID),
 	}
@@ -373,16 +379,31 @@ func buildScheduledActionResult(params VMScheduledActionTaskParams, skipped bool
 	return string(raw)
 }
 
+// scheduleTimeNow 获取当前时间并按定时任务配置的时区转换。
+// 用于记录 last_triggered_at / last_finished_at，
+// 确保展示时间与用户配置的时区一致。
+func scheduleTimeNow(scheduleID uint) time.Time {
+	now := time.Now()
+	schedule, err := model.GetVMScheduleByID(scheduleID)
+	if err != nil {
+		return now
+	}
+	loc, _, err := resolveScheduleLocation(schedule.Timezone)
+	if err != nil {
+		return now
+	}
+	return now.In(loc)
+}
+
 func markScheduleRunning(scheduleID, taskID uint) {
 	if scheduleID == 0 {
 		return
 	}
-	now := time.Now()
 	fields := map[string]interface{}{
 		"last_task_id":      taskID,
 		"last_status":       VMScheduleExecStatusRunning,
 		"last_message":      "任务执行中",
-		"last_triggered_at": now,
+		"last_triggered_at": scheduleTimeNow(scheduleID),
 	}
 	if err := model.UpdateVMScheduleFields(scheduleID, fields); err != nil && err != gorm.ErrRecordNotFound {
 		log.Printf("更新定时任务运行状态失败: id=%d err=%v", scheduleID, err)
@@ -393,11 +414,10 @@ func finishScheduleExecution(scheduleID uint, status, message string) {
 	if scheduleID == 0 {
 		return
 	}
-	now := time.Now()
 	fields := map[string]interface{}{
 		"last_status":      status,
 		"last_message":     strings.TrimSpace(message),
-		"last_finished_at": now,
+		"last_finished_at": scheduleTimeNow(scheduleID),
 	}
 	if err := model.UpdateVMScheduleFields(scheduleID, fields); err != nil && err != gorm.ErrRecordNotFound {
 		log.Printf("更新定时任务执行结果失败: id=%d err=%v", scheduleID, err)

@@ -34,12 +34,12 @@
       </el-table-column>
       <el-table-column label="下次执行" width="180" align="center">
         <template #default="{ row }">
-          {{ row.enabled ? formatDateTime(row.next_run_at) : '已停用' }}
+          {{ row.enabled ? formatDateTime(row.next_run_at, row.timezone || browserTimezone) : '已停用' }}
         </template>
       </el-table-column>
       <el-table-column label="最近执行" width="180" align="center">
         <template #default="{ row }">
-          {{ formatDateTime(row.last_triggered_at) }}
+          {{ formatDateTime(row.last_triggered_at, row.timezone || browserTimezone) }}
         </template>
       </el-table-column>
       <el-table-column label="最近结果" min-width="220">
@@ -267,18 +267,27 @@ const lastStatusTagType = (value) => {
   return map[value] || 'info'
 }
 
-const formatDateTime = (value) => {
+const formatDateTime = (value, tz) => {
   if (!value) return '-'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
-  return date.toLocaleString('zh-CN', {
+  const options = {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit'
-  })
+  }
+  // 使用定时任务配置的时区格式化，确保与用户预期一致
+  if (tz) {
+    try {
+      return new Intl.DateTimeFormat('zh-CN', { ...options, timeZone: tz }).format(date)
+    } catch {
+      // 时区不可用时回退到浏览器时区
+    }
+  }
+  return date.toLocaleString('zh-CN', options)
 }
 
 const formatWeekdays = (values = []) => {
@@ -289,8 +298,9 @@ const formatWeekdays = (values = []) => {
 }
 
 const schedulePlanText = (row) => {
+  const tz = row.timezone || browserTimezone
   if (row.schedule_type === 'once') {
-    return `一次性：${formatDateTime(row.run_at)}`
+    return `一次性：${formatDateTime(row.run_at, tz)}`
   }
   if (row.schedule_type === 'daily') {
     return `每天 ${row.time_of_day || '--:--'}`
