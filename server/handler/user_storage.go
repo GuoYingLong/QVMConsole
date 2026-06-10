@@ -12,6 +12,8 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	vm_memory "kvm_console/service/vm/memory"
+	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 	"kvm_console/utils"
 )
@@ -447,15 +449,15 @@ type SelfCreateVmRequest struct {
 	PAE             *bool                           `json:"pae"`
 	RTCOffset       string                          `json:"rtc_offset"`
 	RTCStartDate    string                          `json:"rtc_startdate"`
-	GuestAgent      *service.VMGuestAgentConfig     `json:"guest_agent"`
-	SMBIOS1         *service.VMSMBIOS1Config        `json:"smbios1"`
+	GuestAgent      *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1         *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	OSType          string                          `json:"os_type"`
 	MachineType     string                          `json:"machine_type"`
 	BootType        string                          `json:"boot_type"`
 	BootOrder       []string                        `json:"boot_order"`
 	VideoModel      string                          `json:"video_model"`
 	CPUTopologyMode string                          `json:"cpu_topology_mode"`
-	MemoryDynamic   *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
+	MemoryDynamic   *vm_memory.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID        uint                            `json:"switch_id"`
 	SecurityGroupID uint                            `json:"security_group_id"`
 	StoragePoolID   string                          `json:"storage_pool_id"`

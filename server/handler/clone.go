@@ -8,6 +8,10 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	clonepkg "kvm_console/service/clone"
+	"kvm_console/service/vm/migration"
+	vm_memory "kvm_console/service/vm/memory"
+	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 )
 
@@ -30,8 +34,8 @@ type CloneVmRequest struct {
 	PAE                  *bool                           `json:"pae"`
 	RTCOffset            string                          `json:"rtc_offset"`
 	RTCStartDate         string                          `json:"rtc_startdate"`
-	GuestAgent           *service.VMGuestAgentConfig     `json:"guest_agent"`
-	SMBIOS1              *service.VMSMBIOS1Config        `json:"smbios1"`
+	GuestAgent           *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1              *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	UEFI                 *bool                           `json:"uefi"`
 	TemplateRootPass     string                          `json:"template_root_pass"`
 	TemplateUser         string                          `json:"template_user"`
@@ -41,7 +45,7 @@ type CloneVmRequest struct {
 	CPULimitPercent      int                             `json:"cpu_limit_percent"`
 	CPUAffinity          string                          `json:"cpu_affinity"`        // CPU 亲和性，如 "0,2,4"
 	FirstBootRebootMode  string                          `json:"first_boot_reboot_mode"`
-	MemoryDynamic        *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
+	MemoryDynamic        *vm_memory.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID             uint                            `json:"switch_id"`
 	SecurityGroupID      uint                            `json:"security_group_id"`
 	ExtraNics            []service.AddVMInterfaceRequest `json:"extra_nics"`
@@ -73,8 +77,8 @@ type BatchCloneRequest struct {
 	PAE                 *bool                       `json:"pae"`
 	RTCOffset           string                      `json:"rtc_offset"`
 	RTCStartDate        string                      `json:"rtc_startdate"`
-	GuestAgent          *service.VMGuestAgentConfig `json:"guest_agent"`
-	SMBIOS1             *service.VMSMBIOS1Config    `json:"smbios1"`
+	GuestAgent          *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1             *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	UEFI                *bool                       `json:"uefi"`
 	TemplateRootPass    string                      `json:"template_root_pass"`
 	TemplateUser        string                      `json:"template_user"`
@@ -141,9 +145,9 @@ func CloneVm(c *gin.Context) {
 	if templateType == "" {
 		templateType = meta.Type
 	}
-	req.User = service.NormalizeCloneUsernameForTemplate(templateType, req.User)
+	req.User = clonepkg.NormalizeCloneUsernameForTemplate(templateType, req.User)
 
-	if err := service.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, true); err != nil {
+	if err := clonepkg.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, true); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": err.Error(),
@@ -151,7 +155,7 @@ func CloneVm(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(req.FnOSDeviceID) != "" {
-		if err := service.ValidateFnOSDeviceID(req.FnOSDeviceID); err != nil {
+		if err := clonepkg.ValidateFnOSDeviceID(req.FnOSDeviceID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": err.Error(),
@@ -170,7 +174,7 @@ func CloneVm(c *gin.Context) {
 		return
 	}
 
-	params := &service.CloneParams{
+	params := &clonepkg.CloneParams{
 		Name:                 req.Name,
 		Remark:               req.Remark,
 		Template:             req.Template,
@@ -311,7 +315,7 @@ func BatchCloneVm(c *gin.Context) {
 		return
 	}
 
-	params := &service.BatchCloneParams{
+	params := &clonepkg.BatchCloneParams{
 		Prefix:              req.Prefix,
 		StartNum:            req.StartNum,
 		Count:               req.Count,
@@ -442,8 +446,8 @@ func ReinstallVm(c *gin.Context) {
 		firstBootRebootMode = meta.DefaultConfig.FirstBootRebootMode
 	}
 	requireCredentials := templateType == "linux" || templateType == "windows" || templateType == "fnos"
-	req.User = service.NormalizeCloneUsernameForTemplate(templateType, req.User)
-	if err := service.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, requireCredentials); err != nil {
+	req.User = clonepkg.NormalizeCloneUsernameForTemplate(templateType, req.User)
+	if err := clonepkg.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, requireCredentials); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": err.Error(),
@@ -451,7 +455,7 @@ func ReinstallVm(c *gin.Context) {
 		return
 	}
 	if strings.TrimSpace(req.FnOSDeviceID) != "" {
-		if err := service.ValidateFnOSDeviceID(req.FnOSDeviceID); err != nil {
+		if err := clonepkg.ValidateFnOSDeviceID(req.FnOSDeviceID); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"code":    400,
 				"message": err.Error(),
@@ -460,7 +464,7 @@ func ReinstallVm(c *gin.Context) {
 		}
 		req.PreserveFnOSDeviceID = true
 	}
-	if service.HasActiveReinstallTask(name) {
+	if migration.HasActiveReinstallTask(name) {
 		c.JSON(http.StatusConflict, gin.H{
 			"code":    409,
 			"message": "该虚拟机已有进行中的重装任务，请等待当前任务完成",
@@ -468,7 +472,7 @@ func ReinstallVm(c *gin.Context) {
 		return
 	}
 
-	diskSize, err := service.ResolveReinstallDiskSizeGB(name, req.Template, req.DiskSize)
+	diskSize, err := clonepkg.ResolveReinstallDiskSizeGB(name, req.Template, req.DiskSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -477,7 +481,7 @@ func ReinstallVm(c *gin.Context) {
 		return
 	}
 
-	params := &service.ReinstallParams{
+	params := &clonepkg.ReinstallParams{
 		Name:                 name,
 		Template:             req.Template,
 		TemplateType:         templateType,

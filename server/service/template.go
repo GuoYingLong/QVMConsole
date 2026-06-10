@@ -25,6 +25,10 @@ import (
 
 	"kvm_console/config"
 	"kvm_console/logger"
+	"kvm_console/service/ip_resolver"
+	"kvm_console/service/libvirt_rpc"
+	clonepkg "kvm_console/service/clone"
+	"kvm_console/service/vm_xml"
 	"kvm_console/utils"
 )
 
@@ -257,6 +261,11 @@ func generateTemplateID(prefix string) string {
 	return prefix + "_" + hex.EncodeToString(buf[:])
 }
 
+// NormalizeTemplateBootType exports normalizeTemplateBootType for clone Deps
+func NormalizeTemplateBootType(bootType string) string {
+	return normalizeTemplateBootType(bootType)
+}
+
 func normalizeTemplateBootType(bootType string) string {
 	switch strings.ToLower(strings.TrimSpace(bootType)) {
 	case "uefi":
@@ -364,7 +373,7 @@ func normalizeTemplateDefaultConfig(config *TemplateDefaultConfig) *TemplateDefa
 	}
 	if strings.TrimSpace(normalized.VideoModel) != "" {
 		switch strings.ToLower(strings.TrimSpace(normalized.VideoModel)) {
-		case VMVideoModelVirtio, VMVideoModelVGA, VMVideoModelVMVGA, VMVideoModelCirrus:
+		case vm_xml.VMVideoModelVirtio, vm_xml.VMVideoModelVGA, vm_xml.VMVideoModelVMVGA, vm_xml.VMVideoModelCirrus:
 			normalized.VideoModel = strings.ToLower(strings.TrimSpace(normalized.VideoModel))
 		default:
 			normalized.VideoModel = ""
@@ -390,13 +399,13 @@ func getVMVideoModel(vmName string) string {
 	if vmName == "" {
 		return ""
 	}
-	if xmlStr, err := getDomainXMLRPC(vmName, 2); err == nil {
-		if videoModel := ParseVMVideoModelFromDomainXML(xmlStr); videoModel != "" {
+	if xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, 2); err == nil {
+		if videoModel := vm_xml.ParseVMVideoModelFromDomainXML(xmlStr); videoModel != "" {
 			return videoModel
 		}
 	}
-	if xmlStr, err := getDomainXMLRPC(vmName, 0); err == nil {
-		return ParseVMVideoModelFromDomainXML(xmlStr)
+	if xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, 0); err == nil {
+		return vm_xml.ParseVMVideoModelFromDomainXML(xmlStr)
 	}
 	return ""
 }
@@ -406,12 +415,12 @@ func getVMCPUTopologyMode(vmName string) string {
 	if vmName == "" {
 		return ""
 	}
-	if xmlStr, err := getDomainXMLRPC(vmName, 2); err == nil {
+	if xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, 2); err == nil {
 		if mode := ParseVMCPUTopologyModeFromDomainXML(xmlStr); mode != "" {
 			return mode
 		}
 	}
-	if xmlStr, err := getDomainXMLRPC(vmName, 0); err == nil {
+	if xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, 0); err == nil {
 		return ParseVMCPUTopologyModeFromDomainXML(xmlStr)
 	}
 	return ""
@@ -472,7 +481,7 @@ func parseSizeValueToGB(value string) int {
 func collectVMTemplateDefaultConfig(vmName string) *TemplateDefaultConfig {
 	config := &TemplateDefaultConfig{}
 
-	vcpu, maxMemKB, usedMemKB, _, err := getDomainInfoRPC(vmName)
+	vcpu, maxMemKB, usedMemKB, _, err := libvirt_rpc.GetDomainInfoRPC(vmName)
 	if err == nil {
 		config.VCPU = vcpu
 		memoryMB := int(maxMemKB) / 1024
@@ -582,7 +591,7 @@ func detectBootTypeFromDomainXML(xmlContent string) string {
 
 func DetectVMBootType(vmName string) string {
 	for _, flags := range []uint32{2, 0} {
-		xmlStr, err := getDomainXMLRPC(vmName, libvirt.DomainXMLFlags(flags))
+		xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, libvirt.DomainXMLFlags(flags))
 		if err != nil {
 			continue
 		}
@@ -596,7 +605,7 @@ func DetectVMBootType(vmName string) string {
 
 func DetectVMNVRAMPath(vmName string) string {
 	for _, flags := range []uint32{2, 0} {
-		xmlStr, err := getDomainXMLRPC(vmName, libvirt.DomainXMLFlags(flags))
+		xmlStr, err := libvirt_rpc.GetDomainXMLRPC(vmName, libvirt.DomainXMLFlags(flags))
 		if err != nil {
 			continue
 		}
@@ -1119,7 +1128,7 @@ func PrepareTemplate(params *PrepareTemplateParams) error {
 		return fmt.Errorf("无法获取虚拟机 %s 的磁盘路径", params.VMName)
 	}
 
-	state, err := getDomainStateRPC(params.VMName)
+	state, err := libvirt_rpc.GetDomainStateRPC(params.VMName)
 	if err != nil {
 		return fmt.Errorf("获取虚拟机状态失败: %w", err)
 	}
@@ -1345,12 +1354,12 @@ func directChildTemplates(tree *templateTreeData, nodeID string) []TemplateInfo 
 
 func hydrateTemplateRelatedVMs(vms []TemplateRelatedVM) []TemplateRelatedVM {
 	for i := range vms {
-		state := strings.TrimSpace(getDomainState(vms[i].Name))
+		state := strings.TrimSpace(GetDomainState(vms[i].Name))
 		if state == "" {
 			state = "unknown"
 		}
 		vms[i].Status = state
-		vms[i].IP = getVMIP(vms[i].Name, state == "running")
+		vms[i].IP = ip_resolver.GetVMIP(vms[i].Name, state == "running")
 	}
 	return vms
 }
@@ -1368,7 +1377,7 @@ func buildTemplatePromoteBlockers(preview *DeleteTemplatePreview) []string {
 	}
 	for _, vm := range preview.RelatedVMs {
 		if !isVMStateShutoff(vm.Status) {
-			blockers = append(blockers, fmt.Sprintf("关联虚拟机 %s 当前状态为 %s，请先关机", vm.Name, firstNonEmpty(vm.Status, "unknown")))
+			blockers = append(blockers, fmt.Sprintf("关联虚拟机 %s 当前状态为 %s，请先关机", vm.Name, FirstNonEmpty(vm.Status, "unknown")))
 		}
 	}
 	return blockers
@@ -1387,7 +1396,7 @@ func buildTemplatePromoteHotBlockers(preview *DeleteTemplatePreview) []string {
 	}
 	for _, vm := range preview.RelatedVMs {
 		if !isVMStateShutoff(vm.Status) && !strings.EqualFold(strings.TrimSpace(vm.Status), "running") {
-			blockers = append(blockers, fmt.Sprintf("关联虚拟机 %s 当前状态为 %s，热提升仅支持 running 或 shut off", vm.Name, firstNonEmpty(vm.Status, "unknown")))
+			blockers = append(blockers, fmt.Sprintf("关联虚拟机 %s 当前状态为 %s，热提升仅支持 running 或 shut off", vm.Name, FirstNonEmpty(vm.Status, "unknown")))
 		}
 	}
 	return blockers
@@ -1467,7 +1476,7 @@ func DeleteTemplateWithVMs(params *DeleteTemplateParams, progressFn func(int, st
 		progress := 10 + (i * 55 / maxInt(totalVMs, 1))
 		progressFn(progress, fmt.Sprintf("正在删除关联虚拟机 %s (%d/%d)...", vm.Name, i+1, totalVMs))
 		owner := FindVMOwner(vm.Name)
-		if err := DeleteVM(vm.Name); err != nil {
+		if err := clonepkg.DeleteVM(vm.Name); err != nil {
 			return nil, fmt.Errorf("删除关联虚拟机 %s 失败: %w", vm.Name, err)
 		}
 		if owner != "" {
@@ -1785,7 +1794,7 @@ func pivotRunningVMToTemplateBacking(vmName, backingPath string) error {
 	if strings.TrimSpace(diskInfo.path) == "" || strings.TrimSpace(diskInfo.device) == "" {
 		return fmt.Errorf("无法获取系统盘路径或设备名")
 	}
-	chain, err := qemuInfoChain(diskInfo.path)
+	chain, err := QemuInfoChain(diskInfo.path)
 	if err != nil {
 		return fmt.Errorf("无法读取活动硬盘容量: %w", err)
 	}
@@ -1799,7 +1808,7 @@ func pivotRunningVMToTemplateBacking(vmName, backingPath string) error {
 	createCmd := "qemu-img create -f qcow2 -F qcow2 -b " + utils.ShellSingleQuote(backingPath) + " " + utils.ShellSingleQuote(targetPath) + " " + strconv.FormatInt(chain[0].VirtualSize, 10)
 	createResult := utils.ExecShellContextWithTimeout(context.Background(), createCmd, 10*time.Minute)
 	if createResult.Error != nil {
-		return fmt.Errorf("创建热切换目标 overlay 失败: %s", firstNonEmpty(createResult.Stderr, createResult.Error.Error()))
+		return fmt.Errorf("创建热切换目标 overlay 失败: %s", FirstNonEmpty(createResult.Stderr, createResult.Error.Error()))
 	}
 	_ = setLibvirtDiskFileOwner(targetPath)
 	cmd := strings.Join([]string{
@@ -1814,7 +1823,7 @@ func pivotRunningVMToTemplateBacking(vmName, backingPath string) error {
 	if result.Error != nil {
 		_ = utils.ExecCommand("virsh", "blockjob", vmName, diskInfo.device, "--abort", "--async")
 		_ = os.Remove(targetPath)
-		return fmt.Errorf("热切换运行中 VM backing 失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("热切换运行中 VM backing 失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	if err := updateInactiveDomainDiskPath(vmName, diskInfo.path, targetPath); err != nil {
 		return err
@@ -1835,7 +1844,7 @@ func blockPullRunningVMToBase(vmName, device, diskPath, basePath string) error {
 	}, " ")
 	result := utils.ExecShellContextWithTimeout(context.Background(), cmd, 8*time.Hour)
 	if result.Error != nil {
-		return fmt.Errorf("运行中 VM 在线拉平到上级模板失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("运行中 VM 在线拉平到上级模板失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	if err := ensureDiskBackingMatches(diskPath, basePath); err != nil {
 		return err
@@ -1915,7 +1924,7 @@ func rebaseQcow2BackingToParent(diskPath, oldParentPath, newParentPath string) e
 		diskPath,
 	)
 	if result.Error != nil {
-		return fmt.Errorf("安全 rebase 失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("安全 rebase 失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	if err := ensureDiskBackingMatches(diskPath, newParentPath); err != nil {
 		return err
@@ -1925,14 +1934,14 @@ func rebaseQcow2BackingToParent(diskPath, oldParentPath, newParentPath string) e
 }
 
 func ensureDiskCanLeaveOldBacking(diskPath, oldParentPath string) error {
-	chain, err := qemuInfoChain(diskPath)
+	chain, err := QemuInfoChain(diskPath)
 	if err != nil {
 		return err
 	}
 	if len(chain) < 2 {
 		return nil
 	}
-	currentBacking := firstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
+	currentBacking := FirstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
 	if sameCleanPath(currentBacking, oldParentPath) {
 		return nil
 	}
@@ -1940,14 +1949,14 @@ func ensureDiskCanLeaveOldBacking(diskPath, oldParentPath string) error {
 }
 
 func ensureDiskBackingMatches(diskPath, expectedBacking string) error {
-	chain, err := qemuInfoChain(diskPath)
+	chain, err := QemuInfoChain(diskPath)
 	if err != nil {
 		return err
 	}
 	if len(chain) < 2 {
 		return fmt.Errorf("rebase 后磁盘未形成链式 backing")
 	}
-	currentBacking := firstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
+	currentBacking := FirstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
 	if !sameCleanPath(currentBacking, expectedBacking) {
 		return fmt.Errorf("rebase 后 backing 不匹配，当前为 %s，期望为 %s", currentBacking, expectedBacking)
 	}

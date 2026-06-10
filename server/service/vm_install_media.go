@@ -123,7 +123,7 @@ func nextAvailableInstallMediaDevice(xmlContent, bus string) (string, error) {
 		}
 	}
 
-	prefix := getDevPrefix(bus)
+	prefix := GetDevPrefix(bus)
 	for _, letter := range "abcdefghijklmnop" {
 		candidate := prefix + string(letter)
 		if !usedDevices[candidate] {

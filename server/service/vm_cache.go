@@ -3,10 +3,8 @@ package service
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"gorm.io/gorm"
@@ -14,6 +12,9 @@ import (
 
 	"kvm_console/logger"
 	"kvm_console/model"
+	"kvm_console/service/ip_resolver"
+	"kvm_console/service/libvirt_rpc"
+	"kvm_console/utils"
 )
 
 var errVMCacheSourceMissing = errors.New("vm cache source missing")
@@ -153,7 +154,9 @@ func vmInfoFromCacheRecord(record model.VMCache, options VMListOptions) VmInfo {
 	vm.ContinuousRuntimeSeconds = runtimeInfo.ContinuousRuntimeSeconds
 	vm.ContinuousRunningSince = runtimeInfo.ContinuousRunningSince
 	vm.Locked = IsVMLocked(record.Name)
-	applyVMUnderMigrationStatus(&vm)
+	if HookApplyVMUnderMigrationStatus != nil {
+		HookApplyVMUnderMigrationStatus(&vm)
+	}
 	return vm
 }
 
@@ -293,7 +296,7 @@ func upsertVMCacheRecord(record model.VMCache) error {
 }
 
 func defaultVMCacheListNamesFromHost() ([]string, error) {
-	domains, err := listAllDomainsRPC()
+	domains, err := libvirt_rpc.ListAllDomainsRPC()
 	if err != nil {
 		return nil, fmt.Errorf("获取虚拟机列表失败: %w", err)
 	}
@@ -309,12 +312,12 @@ func defaultVMCacheListNamesFromHost() ([]string, error) {
 func defaultVMCacheBuildRecordFromHost(name string, syncedAt time.Time) (model.VMCache, error) {
 	record := model.VMCache{
 		Name:          name,
-		OwnerUsername: firstNonEmpty(strings.TrimSpace(FindVMOwner(name)), "admin"),
+		OwnerUsername: FirstNonEmpty(strings.TrimSpace(FindVMOwner(name)), "admin"),
 		Present:       true,
 		LastSyncedAt:  syncedAt,
 	}
 
-	vcpu, maxMemKB, usedMemKB, autostart, infoErr := getDomainInfoRPC(name)
+	vcpu, maxMemKB, usedMemKB, autostart, infoErr := libvirt_rpc.GetDomainInfoRPC(name)
 	if infoErr != nil {
 		if isDomainNotFoundError(infoErr) {
 			return model.VMCache{}, errVMCacheSourceMissing
@@ -322,7 +325,7 @@ func defaultVMCacheBuildRecordFromHost(name string, syncedAt time.Time) (model.V
 		return model.VMCache{}, fmt.Errorf("获取虚拟机信息失败: %w", infoErr)
 	}
 
-	status, stateErr := getDomainStateRPC(name)
+	status, stateErr := libvirt_rpc.GetDomainStateRPC(name)
 	if stateErr != nil {
 		return model.VMCache{}, fmt.Errorf("获取虚拟机状态失败: %w", stateErr)
 	}
@@ -353,7 +356,7 @@ func defaultVMCacheBuildRecordFromHost(name string, syncedAt time.Time) (model.V
 
 	record.BandwidthIn, record.BandwidthOut = GetVMBandwidthMbps(name)
 	record.InRescue = IsInRescueMode(name)
-	record.CachedIP = getVMIP(name, strings.EqualFold(record.Status, "running"))
+	record.CachedIP = ip_resolver.GetVMIP(name, strings.EqualFold(record.Status, "running"))
 
 	return record, nil
 }
@@ -377,16 +380,7 @@ func readVMCreatedAtText(name string) string {
 	}
 
 	xmlPath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
-	info, err := os.Stat(xmlPath)
-	if err != nil {
-		return ""
-	}
-
-	stat := info.Sys().(*syscall.Stat_t)
-	createdSeconds := stat.Ctim.Sec
-	if createdSeconds <= 0 {
-		createdSeconds = stat.Mtim.Sec
-	}
+	createdSeconds := utils.GetFileCreateTime(xmlPath)
 	if createdSeconds <= 0 {
 		return ""
 	}
@@ -412,7 +406,7 @@ func SyncVMCacheOwner(name string) {
 	if name == "" {
 		return
 	}
-	UpdateVMCacheOwner(name, firstNonEmpty(strings.TrimSpace(FindVMOwner(name)), "admin"))
+	UpdateVMCacheOwner(name, FirstNonEmpty(strings.TrimSpace(FindVMOwner(name)), "admin"))
 }
 
 func SyncVMCacheOwnersForAssignment(username string, assignedVMs []string) {

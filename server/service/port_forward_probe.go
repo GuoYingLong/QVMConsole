@@ -15,6 +15,7 @@ import (
 	"kvm_console/config"
 	"kvm_console/logger"
 	"kvm_console/model"
+	netpkg "kvm_console/service/network"
 )
 
 const (
@@ -726,7 +727,7 @@ func resolvePortForwardRestoreIP(state *model.PortForwardProbeState) string {
 	}
 	vmName := strings.TrimSpace(state.VMName)
 	if vmName != "" {
-		if ip, err := EnsureStaticIP(vmName); err == nil && strings.TrimSpace(ip) != "" {
+		if ip, err := netpkg.EnsureStaticIP(vmName); err == nil && strings.TrimSpace(ip) != "" {
 			return strings.TrimSpace(ip)
 		}
 		if ip := strings.TrimSpace(getFirewallVMIP(vmName)); ip != "" {

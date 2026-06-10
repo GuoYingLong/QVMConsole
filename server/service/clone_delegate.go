@@ -1,0 +1,140 @@
+package service
+
+// Clone function delegates - forward to service/clone subpackage
+// Maintains backward compatibility for callers using service.XXX()
+import (
+	"context"
+
+	clonepkg "kvm_console/service/clone"
+)
+
+// DeleteVM delegates to clone.DeleteVM
+func DeleteVM(name string) error {
+	return clonepkg.DeleteVM(name)
+}
+
+// DeleteVMWithDisks delegates to clone.DeleteVMWithDisks
+func DeleteVMWithDisks(name string, deleteDisks []string, transferDisks []string, transferUser string) error {
+	return clonepkg.DeleteVMWithDisks(name, deleteDisks, transferDisks, transferUser)
+}
+
+// ForceDeleteVM delegates to clone.ForceDeleteVM
+func ForceDeleteVM(name string) error {
+	return clonepkg.ForceDeleteVM(name)
+}
+
+// CloneVM delegates to clone.CloneVM
+func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, string)) (*CloneResult, error) {
+	return clonepkg.CloneVM(ctx, params, progressFn)
+}
+
+// BatchCloneVM delegates to clone.BatchCloneVM
+func BatchCloneVM(ctx context.Context, params *BatchCloneParams, progressFn func(int, string)) ([]CloneResult, error) {
+	return clonepkg.BatchCloneVM(ctx, params, progressFn)
+}
+
+// ReinstallVM delegates to clone.ReinstallVM
+func ReinstallVM(ctx context.Context, params *ReinstallParams, progressFn func(int, string)) error {
+	return clonepkg.ReinstallVM(ctx, params, progressFn)
+}
+
+// ParseCloneParams delegates to clone.ParseCloneParams
+func ParseCloneParams(jsonStr string) (*CloneParams, error) {
+	return clonepkg.ParseCloneParams(jsonStr)
+}
+
+// ParseBatchCloneParams delegates to clone.ParseBatchCloneParams
+func ParseBatchCloneParams(jsonStr string) (*BatchCloneParams, error) {
+	return clonepkg.ParseBatchCloneParams(jsonStr)
+}
+
+// ParseReinstallParams delegates to clone.ParseReinstallParams
+func ParseReinstallParams(jsonStr string) (*ReinstallParams, error) {
+	return clonepkg.ParseReinstallParams(jsonStr)
+}
+
+// CheckDiskTransferQuota delegates to clone.CheckDiskTransferQuota
+func CheckDiskTransferQuota(username string, diskPaths []string) (int64, error) {
+	return clonepkg.CheckDiskTransferQuota(username, diskPaths)
+}
+
+// ValidateCloneCredentials delegates to clone.ValidateCloneCredentials
+func ValidateCloneCredentials(hostname, username, password string, requireCredentials bool) error {
+	return clonepkg.ValidateCloneCredentials(hostname, username, password, requireCredentials)
+}
+
+// ValidateCloneCredentialsForTemplate delegates to clone.ValidateCloneCredentialsForTemplate
+func ValidateCloneCredentialsForTemplate(templateType, hostname, username, password string, requireCredentials bool) error {
+	return clonepkg.ValidateCloneCredentialsForTemplate(templateType, hostname, username, password, requireCredentials)
+}
+
+// ValidateStrongPassword delegates to clone.ValidateStrongPassword
+func ValidateStrongPassword(password string) error {
+	return clonepkg.ValidateStrongPassword(password)
+}
+
+// NormalizeCloneUsernameForTemplate delegates to clone.NormalizeCloneUsernameForTemplate
+func NormalizeCloneUsernameForTemplate(templateType, username string) string {
+	return clonepkg.NormalizeCloneUsernameForTemplate(templateType, username)
+}
+
+// ValidateFnOSDeviceID delegates to clone.ValidateFnOSDeviceID
+func ValidateFnOSDeviceID(deviceID string) error {
+	return clonepkg.ValidateFnOSDeviceID(deviceID)
+}
+
+// IsReinstallBootFamilyCompatible delegates to clone.IsReinstallBootFamilyCompatible
+func IsReinstallBootFamilyCompatible(currentBootType, templateBootType string) bool {
+	return clonepkg.IsReinstallBootFamilyCompatible(currentBootType, templateBootType)
+}
+
+// ResolveReinstallDiskSizeGB delegates to clone.ResolveReinstallDiskSizeGB
+func ResolveReinstallDiskSizeGB(vmName, templateName string, requestedDiskSize int) (int, error) {
+	return clonepkg.ResolveReinstallDiskSizeGB(vmName, templateName, requestedDiskSize)
+}
+
+// NormalizeReinstallDiskSizeGB delegates to clone.NormalizeReinstallDiskSizeGB
+func NormalizeReinstallDiskSizeGB(requestedDiskSize, currentDiskSize, minDiskSize int) int {
+	return clonepkg.NormalizeReinstallDiskSizeGB(requestedDiskSize, currentDiskSize, minDiskSize)
+}
+
+// CheckCanceled delegates to clone.CheckCanceled
+func CheckCanceled(ctx context.Context, vmName, diskPath string) error {
+	return clonepkg.CheckCanceled(ctx, vmName, diskPath)
+}
+
+// WaitForIPWithContext delegates to clone.WaitForIPWithContext
+func WaitForIPWithContext(ctx context.Context, vmName string, maxWaitSeconds int) string {
+	return clonepkg.WaitForIPWithContext(ctx, vmName, maxWaitSeconds)
+}
+
+// InitLinuxClone delegates to clone.InitLinuxClone
+func InitLinuxClone(params *CloneParams, ip string, progressFn func(int, string)) error {
+	return clonepkg.InitLinuxClone(params, ip, progressFn)
+}
+
+// InjectMemballoonConfig delegates to clone.InjectMemballoonConfig
+func InjectMemballoonConfig(xmlStr string, enableFPR bool) string {
+	return clonepkg.InjectMemballoonConfig(xmlStr, enableFPR)
+}
+
+// GenerateRandomCloneHostname delegates to clone.GenerateRandomCloneHostname
+func GenerateRandomCloneHostname() string {
+	return clonepkg.GenerateRandomCloneHostname()
+}
+
+// NormalizeFnOSDeviceID delegates to clone.NormalizeFnOSDeviceID
+func NormalizeFnOSDeviceID(deviceID string) (string, string, error) {
+	return clonepkg.NormalizeFnOSDeviceID(deviceID)
+}
+
+// RandomStringFromCharset delegates to clone.RandomStringFromCharset
+func RandomStringFromCharset(charset string, length int) string {
+	return clonepkg.RandomStringFromCharset(charset, length)
+}
+
+// CloneUsernameRegexp re-exports clone.CloneUsernameRegexp
+var CloneUsernameRegexp = clonepkg.CloneUsernameRegexp
+
+// LinuxCloneIPWaitSeconds re-exports clone.LinuxCloneIPWaitSeconds
+const LinuxCloneIPWaitSeconds = clonepkg.LinuxCloneIPWaitSeconds

@@ -103,7 +103,7 @@ func ApplyVMCPULimitToDomainXML(xmlStr string, vcpu, percent int) string {
 
 // SetVMCPULimitPercent 设置虚拟机 CPU 限制百分比。
 func SetVMCPULimitPercent(name string, vcpu, percent int) error {
-	if err := EnsureVMNotMigrating(name, "设置 CPU 限制"); err != nil {
+	if err := HookEnsureVMNotMigrating(name, "设置 CPU 限制"); err != nil {
 		return err
 	}
 

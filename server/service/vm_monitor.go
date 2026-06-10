@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"kvm_console/service/libvirt_rpc"
 )
 
 var monitorInfoCommandPattern = regexp.MustCompile(`^info\s+[a-zA-Z0-9_.:-]+(?:\s+[a-zA-Z0-9_.:-]+)*$`)
@@ -38,7 +40,7 @@ type VMMonitorCommandResult struct {
 
 // GetVMMonitorStatus 获取虚拟机当前监视器状态
 func GetVMMonitorStatus(name string) (*VMMonitorStatus, error) {
-	stateStr, err := getDomainStateRPC(name)
+	stateStr, err := libvirt_rpc.GetDomainStateRPC(name)
 	if err != nil {
 		return nil, fmt.Errorf("获取虚拟机状态失败: %w", err)
 	}
@@ -53,7 +55,7 @@ func GetVMMonitorStatus(name string) (*VMMonitorStatus, error) {
 		return status, nil
 	}
 
-	monitorOutput, err := qemuMonitorCommandRPC(name, "info status", 1)
+	monitorOutput, err := libvirt_rpc.QemuMonitorCommandRPC(name, "info status", libvirt_rpc.DomainQemuMonitorCommandHmp)
 	if err != nil {
 		return nil, fmt.Errorf("获取 QEMU Monitor 状态失败: %w", err)
 	}
@@ -78,7 +80,7 @@ func ExecuteVMMonitorCommand(name, command string) (*VMMonitorCommandResult, err
 		return nil, fmt.Errorf("虚拟机当前状态为 %s，QEMU Monitor 不可用", status.DomainState)
 	}
 
-	output, err := qemuMonitorCommandRPC(name, normalized, 1)
+	output, err := libvirt_rpc.QemuMonitorCommandRPC(name, normalized, libvirt_rpc.DomainQemuMonitorCommandHmp)
 	if err != nil {
 		return nil, fmt.Errorf("执行监视器命令失败: %w", err)
 	}

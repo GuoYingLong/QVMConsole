@@ -51,7 +51,7 @@ func ValidateResetGuestPasswordParams(username, password, guestType string) erro
 		}
 		return ValidateStrongPassword(password)
 	}
-	if !cloneUsernameRegexp.MatchString(trimmedUsername) {
+	if !CloneUsernameRegexp.MatchString(trimmedUsername) {
 		return fmt.Errorf("用户名只能以小写字母或下划线开头，且只能包含小写字母、数字、下划线和短横线")
 	}
 	return ValidateStrongPassword(password)
@@ -65,7 +65,7 @@ func ValidateResetLinuxPasswordParams(username, password string) error {
 // ResetLinuxPassword 离线重置虚拟机密码
 func ResetLinuxPassword(ctx context.Context, params *ResetLinuxPasswordParams, progressFn func(int, string)) error {
 	vmName := strings.TrimSpace(params.VMName)
-	if err := EnsureVMNotMigrating(vmName, "重置密码"); err != nil {
+	if err := HookEnsureVMNotMigrating(vmName, "重置密码"); err != nil {
 		return err
 	}
 	progressFn(5, "正在检查虚拟机状态...")

@@ -9,6 +9,7 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	"kvm_console/service/vm/migration"
 	"kvm_console/taskqueue"
 )
 
@@ -76,7 +77,7 @@ func GetNodeMigrationOptions(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "虚拟机名称不能为空"})
 		return
 	}
-	options, err := service.GetVMMigrationOptions(vmName, uint(id))
+	options, err := migration.GetVMMigrationOptions(vmName, uint(id))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 		return
@@ -85,12 +86,12 @@ func GetNodeMigrationOptions(c *gin.Context) {
 }
 
 func PreviewVMMigration(c *gin.Context) {
-	var req service.VMMigrationRequest
+	var req migration.VMMigrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数无效"})
 		return
 	}
-	preview, err := service.CreateVMMigrationPreview(c.Param("name"), req)
+	preview, err := migration.CreateVMMigrationPreview(c.Param("name"), req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 		return
@@ -102,17 +103,17 @@ func MigrateVM(c *gin.Context) {
 	if !requireHighRiskVerification(c, "migrate_vm") {
 		return
 	}
-	if err := service.EnsureVMNotMigrating(c.Param("name"), "迁移"); err != nil {
+	if err := migration.EnsureVMNotMigrating(c.Param("name"), "迁移"); err != nil {
 		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
 		return
 	}
-	var req service.VMMigrationRequest
+	var req migration.VMMigrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数无效"})
 		return
 	}
 	username, _ := c.Get("username")
-	params := service.VMMigrationTaskParams{
+	params := migration.VMMigrationTaskParams{
 		VMName:                c.Param("name"),
 		NodeID:                req.NodeID,
 		Mode:                  req.Mode,
@@ -134,12 +135,12 @@ func MigrateVM(c *gin.Context) {
 }
 
 func AdoptMigratedVM(c *gin.Context) {
-	var req service.MigrationAdoptRequest
+	var req migration.MigrationAdoptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数无效"})
 		return
 	}
-	result, err := service.AdoptMigratedVM(req)
+	result, err := migration.AdoptMigratedVM(req)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 		return

@@ -99,7 +99,7 @@ func GetVMRemark(name string) (string, error) {
 
 // SetVMRemark 设置虚拟机备注。
 func SetVMRemark(name, remark string) error {
-	if err := EnsureVMNotMigrating(name, "设置虚拟机备注"); err != nil {
+	if err := HookEnsureVMNotMigrating(name, "设置虚拟机备注"); err != nil {
 		return err
 	}
 
@@ -126,7 +126,7 @@ func GetVMGroup(name string) (string, error) {
 
 // SetVMGroup 设置虚拟机分组。
 func SetVMGroup(name, group string) error {
-	if err := EnsureVMNotMigrating(name, "设置虚拟机分组"); err != nil {
+	if err := HookEnsureVMNotMigrating(name, "设置虚拟机分组"); err != nil {
 		return err
 	}
 

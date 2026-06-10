@@ -670,3 +670,9 @@ func disableBridgeRestoreUnitIfEmpty() {
 	utils.ExecCommand("systemctl", "disable", "--now", "kvm-console-bridges.service")
 	utils.ExecCommand("systemctl", "reset-failed", "kvm-console-bridges.service")
 }
+
+func ensureSystemdUnitEnabled(unit string) {
+	if result := utils.ExecCommand("systemctl", "is-enabled", "--quiet", unit); result.Error != nil {
+		utils.ExecCommand("systemctl", "enable", unit)
+	}
+}

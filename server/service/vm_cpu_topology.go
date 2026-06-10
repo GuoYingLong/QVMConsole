@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/digitalocean/go-libvirt"
+
+	"kvm_console/service/libvirt_rpc"
 )
 
 const (
@@ -203,7 +205,7 @@ func parseTopologyAttr(topology string, pattern *regexp.Regexp) int {
 // 注意：必须同时检查 inactive 和 live XML，因为运行时 setvcpus --config
 // 也会校验当前 live 域的 topology 一致性。
 func setVMCPUWithTopologySync(name string, vcpu, maxVCPU int) error {
-	xmlStr, err := getDomainXMLRPC(name, libvirt.DomainXMLInactive)
+	xmlStr, err := libvirt_rpc.GetDomainXMLRPC(name, libvirt.DomainXMLInactive)
 	if err != nil {
 		return fmt.Errorf("获取虚拟机持久化 XML 失败: %w", err)
 	}
@@ -212,7 +214,7 @@ func setVMCPUWithTopologySync(name string, vcpu, maxVCPU int) error {
 
 	if !hasTopology {
 		// 持久化配置没有 topology，再检查在线配置（运行时 setvcpus 可能校验在线域的拓扑）
-		liveXML, liveErr := getDomainXMLRPC(name, 0)
+		liveXML, liveErr := libvirt_rpc.GetDomainXMLRPC(name, 0)
 		if liveErr == nil {
 			hasTopology = vmCPUTopologyRegexp.MatchString(liveXML)
 			if hasTopology {
@@ -230,10 +232,10 @@ func setVMCPUWithTopologySync(name string, vcpu, maxVCPU int) error {
 		if maxVCPU > vcpu {
 			maxArg = maxVCPU
 		}
-		if err := setDomainVcpusFlagsRPC(name, uint32(maxArg), domainVcpuConfig|domainVcpuMaximum); err != nil {
+		if err := libvirt_rpc.SetDomainVcpusFlagsRPC(name, uint32(maxArg), libvirt_rpc.DomainVcpuConfig|libvirt_rpc.DomainVcpuMaximum); err != nil {
 			return fmt.Errorf("设置 CPU 最大值失败: %w", err)
 		}
-		if err := setDomainVcpusFlagsRPC(name, uint32(vcpu), domainVcpuConfig); err != nil {
+		if err := libvirt_rpc.SetDomainVcpusFlagsRPC(name, uint32(vcpu), libvirt_rpc.DomainVcpuConfig); err != nil {
 			return fmt.Errorf("设置 CPU 失败: %w", err)
 		}
 		return nil
@@ -275,7 +277,7 @@ func setVMCPUWithTopologySync(name string, vcpu, maxVCPU int) error {
 		}
 	}
 
-	_, err = defineDomainXMLRPC(xmlStr)
+	_, err = libvirt_rpc.DefineDomainXMLRPC(xmlStr)
 	if err != nil {
 		return fmt.Errorf("设置 CPU 拓扑失败: %w", err)
 	}
@@ -310,7 +312,7 @@ func mergeTopologyFromLiveToInactive(inactiveXML, liveXML string) string {
 
 // SetVMCPUTopologyMode 设置虚拟机 CPU 拓扑模式。运行中的虚拟机需要先关机后再修改。
 func SetVMCPUTopologyMode(name, mode string) error {
-	state, err := getDomainStateRPC(name)
+	state, err := libvirt_rpc.GetDomainStateRPC(name)
 	if err != nil {
 		return fmt.Errorf("获取虚拟机状态失败: %w", err)
 	}
@@ -318,7 +320,7 @@ func SetVMCPUTopologyMode(name, mode string) error {
 		return fmt.Errorf("请先关机后再修改 CPU 拓扑")
 	}
 
-	xmlStr, err := getDomainXMLRPC(name, libvirt.DomainXMLInactive)
+	xmlStr, err := libvirt_rpc.GetDomainXMLRPC(name, libvirt.DomainXMLInactive)
 	if err != nil {
 		return fmt.Errorf("获取虚拟机 XML 失败: %w", err)
 	}
@@ -326,7 +328,7 @@ func SetVMCPUTopologyMode(name, mode string) error {
 	osType := detectVMOSType("", xmlStr)
 	updated := ApplyCPUTopologyModeToDomainXML(xmlStr, mode, osType, ParseVCPUCountFromDomainXML(xmlStr))
 
-	if _, err := defineDomainXMLRPC(updated); err != nil {
+	if _, err := libvirt_rpc.DefineDomainXMLRPC(updated); err != nil {
 		return fmt.Errorf("修改 CPU 拓扑失败: %w", err)
 	}
 	return nil

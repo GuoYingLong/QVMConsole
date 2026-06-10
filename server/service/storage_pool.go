@@ -16,6 +16,7 @@ import (
 
 	"kvm_console/config"
 	"kvm_console/model"
+	"kvm_console/service/snapshot"
 	"kvm_console/utils"
 )
 
@@ -729,7 +730,7 @@ func ensureVMStorageDir(dir string) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("创建虚拟机磁盘目录失败: %w", err)
 	}
-	if err := ensureLibvirtStorageAppArmorAccessForPaths([]string{dir}); err != nil {
+	if err := snapshot.EnsureLibvirtStorageAppArmorAccessForPaths([]string{dir}); err != nil {
 		return fmt.Errorf("配置 libvirt 自定义存储访问规则失败: %w", err)
 	}
 	utils.ExecCommand("chown", "libvirt-qemu:kvm", dir)

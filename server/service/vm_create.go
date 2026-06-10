@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"kvm_console/config"
+	"kvm_console/service/vm/memory"
+	"kvm_console/service/vm_xml"
 	"kvm_console/utils"
 )
 
@@ -33,8 +35,8 @@ type CreateVMParams struct {
 	PAE             *bool                   `json:"pae,omitempty"`    // PAE 开关，默认启用
 	RTCOffset       string                  `json:"rtc_offset,omitempty"`
 	RTCStartDate    string                  `json:"rtc_startdate,omitempty"`
-	GuestAgent      *VMGuestAgentConfig     `json:"guest_agent,omitempty"`
-	SMBIOS1         *VMSMBIOS1Config        `json:"smbios1,omitempty"`
+	GuestAgent      *vm_xml.VMGuestAgentConfig `json:"guest_agent,omitempty"`
+	SMBIOS1         *vm_xml.VMSMBIOS1Config    `json:"smbios1,omitempty"`
 	OSType          string                  `json:"os_type,omitempty"`
 	MachineType     string                  `json:"machine_type,omitempty"`
 	BootType        string                  `json:"boot_type,omitempty"`
@@ -47,7 +49,7 @@ type CreateVMParams struct {
 	VirtType        string                  `json:"virt_type,omitempty"`    // 虚拟化方案: kvm/qemu，默认 kvm
 	Arch            string                  `json:"arch,omitempty"`         // 目标架构: x86_64/aarch64/riscv64
 	ExtraDisks      []ExtraDiskParam        `json:"extra_disks,omitempty"`
-	MemoryDynamic   *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
+	MemoryDynamic   *memory.VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SystemDiskIOPS  *DiskIOPSTune           `json:"system_disk_iops,omitempty"` // 系统盘 IOPS 限制（仅管理员）
 	SwitchID        uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID uint                    `json:"security_group_id,omitempty"`
@@ -58,17 +60,7 @@ type CreateVMParams struct {
 	PCIERootPorts   int                     `json:"pcie_root_ports,omitempty"` // q35 机型预留 pcie-root-port 数量，0 表示使用默认 4
 }
 
-// ExtraDiskParam 额外磁盘参数
-type ExtraDiskParam struct {
-	Size          int    `json:"size"`            // GB
-	Format        string `json:"format"`          // qcow2/raw
-	Bus           string `json:"bus"`             // 磁盘总线: virtio/scsi/sata/ide
-	StoragePoolID string `json:"storage_pool_id"` // 额外磁盘落盘存储位置
-	// IOPS 限制（仅管理员，0 表示不限制）
-	IOPSTotal int `json:"iops_total,omitempty"`
-	IOPSRead  int `json:"iops_read,omitempty"`
-	IOPSWrite int `json:"iops_write,omitempty"`
-}
+// ExtraDiskParam is now defined in storage/disk package; alias in disk_compat.go.
 
 // OSVariantInfo 系统变体信息
 type OSVariantInfo struct {
@@ -232,7 +224,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		return "", err
 	}
 
-	memoryMeta, ramMB, _, err := BuildVMMemoryMetadataForCreate(params.RAM, params.MemoryDynamic)
+	memoryMeta, ramMB, _, err := memory.BuildVMMemoryMetadataForCreate(params.RAM, params.MemoryDynamic)
 	if err != nil {
 		return "", err
 	}
@@ -359,7 +351,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 
 	// 注入 memballoon 配置（非 Windows 启用 freePageReporting）
 	enableFPR := params.OSType != "windows"
-	vmXML := injectMemballoonConfig(xmlOutput, enableFPR)
+	vmXML := InjectMemballoonConfig(xmlOutput, enableFPR)
 
 	// 注入 pcie-root-port 控制器（q35 机型热插拔预留，默认 4 个）
 	pciePortCount := params.PCIERootPorts
@@ -369,7 +361,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	vmXML = injectPCIERootPorts(vmXML, pciePortCount)
 
 	if memoryMeta != nil {
-		vmXML, err = ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, enableFPR)
+		vmXML, err = memory.ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, enableFPR)
 		if err != nil {
 			_ = os.Remove(diskPath)
 			return "", err
@@ -380,12 +372,12 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		_ = os.Remove(diskPath)
 		return "", err
 	}
-	vmXML, err = ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
+	vmXML, err = vm_xml.ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
 	if err != nil {
 		_ = os.Remove(diskPath)
 		return "", err
 	}
-	vmXML, err = ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
+	vmXML, err = vm_xml.ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
 	if err != nil {
 		_ = os.Remove(diskPath)
 		return "", err
@@ -395,14 +387,14 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		_ = os.Remove(diskPath)
 		return "", err
 	}
-	vmXML, err = ApplyVMPAEToDomainXML(vmXML, params.PAE)
+	vmXML, err = vm_xml.ApplyVMPAEToDomainXML(vmXML, params.PAE)
 	if err != nil {
 		_ = os.Remove(diskPath)
 		return "", err
 	}
-	vmXML = ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, params.OSType)
+	vmXML = vm_xml.ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, params.OSType)
 	if params.OSType == "windows" {
-		vmXML = ApplyWindowsGuestOptimizationsToDomainXML(vmXML)
+		vmXML = vm_xml.ApplyWindowsGuestOptimizationsToDomainXML(vmXML)
 	}
 	topoVCPU := EffectiveTopologyVCPU(params.VCPU, params.MaxVCPU)
 	vmXML = ApplyCPUTopologyModeToDomainXML(vmXML, params.CPUTopologyMode, params.OSType, topoVCPU)
@@ -421,9 +413,9 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		}
 		vmXML = ApplyCPUAffinityToDomainXML(vmXML, topoVCPU, affinityCores)
 	}
-	normalizedBootType := NormalizeVMBootType(params.BootType)
+	normalizedBootType := vm_xml.NormalizeVMBootType(params.BootType)
 	if normalizedBootType != "" {
-		vmXML, err = ApplyVMBootTypeToDomainXML(params.Name, vmXML, normalizedBootType)
+		vmXML, err = vm_xml.ApplyVMBootTypeToDomainXML(params.Name, vmXML, normalizedBootType)
 		if err != nil {
 			_ = os.Remove(diskPath)
 			return "", err
@@ -439,7 +431,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		_ = os.Remove(diskPath)
 		return "", err
 	}
-	if err := ensureVMUEFINVRAMFile(params.Name, vmXML, normalizedBootType); err != nil {
+	if err := vm_xml.EnsureVMUEFINVRAMFile(params.Name, vmXML, normalizedBootType); err != nil {
 		_ = os.Remove(diskPath)
 		return "", err
 	}
@@ -484,7 +476,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		return "", fmt.Errorf("定义虚拟机失败: %s", defineResult.Stderr)
 	}
 	if memoryMeta != nil {
-		if err := writeVMMemoryMetadata(params.Name, memoryMeta); err != nil {
+		if err := memory.WriteVMMemoryMetadata(params.Name, memoryMeta); err != nil {
 			_ = os.Remove(diskPath)
 			return "", err
 		}

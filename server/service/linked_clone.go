@@ -12,6 +12,10 @@ import (
 	"github.com/digitalocean/go-libvirt"
 	"kvm_console/config"
 	"kvm_console/logger"
+	"kvm_console/service/libvirt_rpc"
+	clonepkg "kvm_console/service/clone"
+	"kvm_console/service/vm/memory"
+	"kvm_console/service/vm_xml"
 	"kvm_console/utils"
 )
 
@@ -33,8 +37,8 @@ type LinkedCloneParams struct {
 	PAE                 *bool                   `json:"pae,omitempty"`
 	RTCOffset           string                  `json:"rtc_offset,omitempty"`
 	RTCStartDate        string                  `json:"rtc_startdate,omitempty"`
-	GuestAgent          *VMGuestAgentConfig     `json:"guest_agent,omitempty"`
-	SMBIOS1             *VMSMBIOS1Config        `json:"smbios1,omitempty"`
+	GuestAgent          *vm_xml.VMGuestAgentConfig `json:"guest_agent,omitempty"`
+	SMBIOS1             *vm_xml.VMSMBIOS1Config    `json:"smbios1,omitempty"`
 	BootType            string                  `json:"boot_type,omitempty"`
 	DiskBus             string                  `json:"disk_bus,omitempty"`
 	VideoModel          string                  `json:"video_model,omitempty"`
@@ -42,7 +46,7 @@ type LinkedCloneParams struct {
 	CPULimitPercent     int                     `json:"cpu_limit_percent,omitempty"`
 	CPUAffinity         string                  `json:"cpu_affinity,omitempty"`    // CPU 亲和性，如 "0,2,4"
 	FirstBootRebootMode string                  `json:"first_boot_reboot_mode,omitempty"`
-	MemoryDynamic       *VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
+	MemoryDynamic       *memory.VMMemoryDynamicRequest `json:"memory_dynamic,omitempty"`
 	SwitchID            uint                    `json:"switch_id,omitempty"`
 	SecurityGroupID     uint                    `json:"security_group_id,omitempty"`
 	ExtraNics           []AddVMInterfaceRequest `json:"extra_nics,omitempty"`
@@ -106,7 +110,7 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 	}
 
 	// 检查虚拟机是否已存在
-	if _, _, _, _, err := getDomainInfoRPC(params.Name); err == nil {
+	if _, _, _, _, err := libvirt_rpc.GetDomainInfoRPC(params.Name); err == nil {
 		return nil, fmt.Errorf("虚拟机 '%s' 已存在", params.Name)
 	}
 
@@ -190,7 +194,7 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		}
 	}
 
-	if err := checkCanceled(ctx, "", cloneDisk); err != nil {
+	if err := clonepkg.CheckCanceled(ctx, "", cloneDisk); err != nil {
 		return nil, err
 	}
 
@@ -200,7 +204,7 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		return nil, err
 	}
 
-	memoryMeta, ramMB, _, err := BuildVMMemoryMetadataForCreate(params.RAM, params.MemoryDynamic)
+	memoryMeta, ramMB, _, err := memory.BuildVMMemoryMetadataForCreate(params.RAM, params.MemoryDynamic)
 	if err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
@@ -250,7 +254,7 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 	}
 
 	enableFPR := templateType != "windows" && templateType != "other"
-	vmXML := injectMemballoonConfig(xmlOutput, enableFPR)
+	vmXML := clonepkg.InjectMemballoonConfig(xmlOutput, enableFPR)
 
 	// 注入 pcie-root-port 控制器（q35 机型热插拔预留，默认 4 个）
 	pciePortCount := params.PCIERootPorts
@@ -260,7 +264,7 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 	vmXML = injectPCIERootPorts(vmXML, pciePortCount)
 
 	if memoryMeta != nil {
-		vmXML, err = ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, enableFPR)
+		vmXML, err = memory.ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, enableFPR)
 		if err != nil {
 			cleanupLinkedCloneArtifacts("", cloneDisk)
 			return nil, err
@@ -271,12 +275,12 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
-	vmXML, err = ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
+	vmXML, err = vm_xml.ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
 	if err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
-	vmXML, err = ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
+	vmXML, err = vm_xml.ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
 	if err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
@@ -286,14 +290,14 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
-	vmXML, err = ApplyVMPAEToDomainXML(vmXML, params.PAE)
+	vmXML, err = vm_xml.ApplyVMPAEToDomainXML(vmXML, params.PAE)
 	if err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
-	vmXML = ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, templateType)
+	vmXML = vm_xml.ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, templateType)
 	if templateType == "windows" {
-		vmXML = ApplyWindowsGuestOptimizationsToDomainXML(vmXML)
+		vmXML = vm_xml.ApplyWindowsGuestOptimizationsToDomainXML(vmXML)
 	}
 	topoVCPU := EffectiveTopologyVCPU(params.VCPU, params.MaxVCPU)
 	vmXML = ApplyCPUTopologyModeToDomainXML(vmXML, params.CPUTopologyMode, templateType, topoVCPU)
@@ -312,9 +316,9 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		}
 		vmXML = ApplyCPUAffinityToDomainXML(vmXML, topoVCPU, affinityCores)
 	}
-	normalizedBootType := NormalizeVMBootType(bootType)
+	normalizedBootType := vm_xml.NormalizeVMBootType(bootType)
 	if normalizedBootType != "" {
-		vmXML, err = ApplyVMBootTypeToDomainXML(params.Name, vmXML, normalizedBootType)
+		vmXML, err = vm_xml.ApplyVMBootTypeToDomainXML(params.Name, vmXML, normalizedBootType)
 		if err != nil {
 			cleanupLinkedCloneArtifacts("", cloneDisk)
 			return nil, err
@@ -329,19 +333,19 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
-	if err := ensureVMUEFINVRAMFile(params.Name, vmXML, normalizedBootType); err != nil {
+	if err := vm_xml.EnsureVMUEFINVRAMFile(params.Name, vmXML, normalizedBootType); err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, err
 	}
 
 	// 定义虚拟机（直接通过 RPC，无需临时文件）
-	if _, err := defineDomainXMLRPC(vmXML); err != nil {
+	if _, err := libvirt_rpc.DefineDomainXMLRPC(vmXML); err != nil {
 		cleanupLinkedCloneArtifacts("", cloneDisk)
 		return nil, fmt.Errorf("定义虚拟机失败: %w", err)
 	}
 
 	if memoryMeta != nil {
-		if err := writeVMMemoryMetadata(params.Name, memoryMeta); err != nil {
+		if err := memory.WriteVMMemoryMetadata(params.Name, memoryMeta); err != nil {
 			cleanupLinkedCloneArtifacts(params.Name, cloneDisk)
 			return nil, err
 		}
@@ -374,12 +378,12 @@ func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn fu
 		}
 	}
 
-	if err := checkCanceled(ctx, params.Name, cloneDisk); err != nil {
+	if err := clonepkg.CheckCanceled(ctx, params.Name, cloneDisk); err != nil {
 		return nil, err
 	}
 
 	if params.Autostart {
-		if err := setDomainAutostartRPC(params.Name, true); err != nil {
+		if err := libvirt_rpc.SetDomainAutostartRPC(params.Name, true); err != nil {
 			logger.App.Warn("设置虚拟机自动启动失败", "vm", params.Name, "error", err)
 		}
 	}
@@ -405,13 +409,13 @@ func cleanupLinkedCloneArtifacts(vmName, diskPath string) {
 	// 如果提供了 VM 名称，尝试清理 libvirt 定义
 	if strings.TrimSpace(vmName) != "" {
 		// 尝试销毁（如果 VM 正在运行）
-		if err := destroyDomainRPC(vmName); err != nil {
+		if err := libvirt_rpc.DestroyDomainRPC(vmName); err != nil {
 			logger.Libvirt.Warn("销毁虚拟机失败", "vm", vmName, "error", err)
 		} else {
 			logger.Libvirt.Info("已销毁虚拟机", "vm", vmName)
 		}
 		// 尝试取消定义（含 NVRAM 和快照元数据）
-		if err := undefineDomainRPC(vmName, libvirt.DomainUndefineNvram|libvirt.DomainUndefineSnapshotsMetadata); err != nil {
+		if err := libvirt_rpc.UndefineDomainRPC(vmName, libvirt.DomainUndefineNvram|libvirt.DomainUndefineSnapshotsMetadata); err != nil {
 			logger.Libvirt.Warn("取消定义虚拟机失败", "vm", vmName, "error", err)
 		} else {
 			logger.Libvirt.Info("已取消定义虚拟机", "vm", vmName)

@@ -15,6 +15,7 @@ import (
 
 	"kvm_console/logger"
 	"kvm_console/model"
+	clonepkg "kvm_console/service/clone"
 	"kvm_console/taskqueue"
 )
 
@@ -346,7 +347,7 @@ func executeScheduledVMAction(ctx context.Context, params VMScheduledActionTaskP
 			return "", "", fmt.Errorf("虚拟机已锁定，无法执行定时删除")
 		}
 		progress(35, "正在删除虚拟机")
-		if err := DeleteVM(params.VMName); err != nil {
+		if err := clonepkg.DeleteVM(params.VMName); err != nil {
 			return "", "", err
 		}
 		_ = DeleteVMCredential(params.VMName)

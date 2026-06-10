@@ -8,113 +8,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	bw "kvm_console/service/bandwidth"
 	"kvm_console/config"
 	"kvm_console/logger"
-	"kvm_console/model"
 	"kvm_console/service"
-	"kvm_console/taskqueue"
+	vm_memory "kvm_console/service/vm/memory"
 	"kvm_console/utils"
 )
-
-// VmOperateRequest 虚拟机操作请求
-type VmOperateRequest struct {
-	Action string `json:"action" binding:"required"` // start, shutdown, destroy, reboot, reset
-}
-
-// ResetLinuxPasswordRequest 重置虚拟机密码请求
-type ResetLinuxPasswordRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-}
-
-// VmEditRequest 虚拟机编辑请求
-type VmEditRequest struct {
-	VCPU            int                             `json:"vcpu"`
-	MaxVCPU         int                             `json:"max_vcpu,omitempty"` // CPU 热添加上限，0 或 <= vcpu 表示不启用
-	Memory          int                             `json:"memory"`            // GB
-	Remark          *string                         `json:"remark"`            // 备注
-	Group           *string                         `json:"group"`             // 分组
-	Autostart       *bool                           `json:"autostart"`         // 开机自启（指针区分是否传递）
-	Freeze          *bool                           `json:"freeze"`            // 启动时冻结 CPU
-	APIC            *bool                           `json:"apic"`              // APIC 开关
-	PAE             *bool                           `json:"pae"`               // PAE 开关
-	BootType        string                          `json:"boot_type"`         // 引导方式: bios/uefi/uefi-secure
-	RTCOffset       *string                         `json:"rtc_offset"`        // RTC 时间基准
-	RTCStartDate    *string                         `json:"rtc_startdate"`     // RTC 开始日期
-	GuestAgent      *service.VMGuestAgentConfig     `json:"guest_agent"`       // QEMU Guest Agent 配置
-	SMBIOS1         *service.VMSMBIOS1Config        `json:"smbios1"`           // SMBIOS 类型 1 配置
-	BootOrder       []string                        `json:"boot_order"`        // 启动顺序
-	NicModel        string                          `json:"nic_model"`         // 网卡类型: virtio/e1000e/rtl8139
-	VideoModel      string                          `json:"video_model"`       // 视频模型: virtio/vga/vmvga/cirrus
-	CPUTopologyMode string                          `json:"cpu_topology_mode"` // CPU 拓扑模式
-	CPULimitPercent *int                            `json:"cpu_limit_percent"` // CPU 限制百分比（仅管理员，0 表示无限制）
-	CPUAffinity     *string                         `json:"cpu_affinity"`      // CPU 亲和性（仅管理员，null 表示不修改，空字符串表示清除）
-	MemoryDynamic   *service.VMMemoryDynamicRequest `json:"memory_dynamic"`    // 动态内存配置（管理员）
-	HostDevices     []service.HostDeviceParam       `json:"host_devices"`      // 硬件直通设备
-	// 磁盘操作
-	AddDisks []VmAddDiskItem `json:"add_disks"` // 新增磁盘
-	// 磁盘 IOPS 限制（仅管理员，key 为设备名如 vda）
-	DiskIOPS map[string]service.DiskIOPSTune `json:"disk_iops"`
-	// 带宽速率限制（Mbps，指针类型区分是否传递）
-	BandwidthInboundAvg  *int `json:"bandwidth_inbound_avg"`  // 下行平峰速率 Mbps
-	BandwidthOutboundAvg *int `json:"bandwidth_outbound_avg"` // 上行平峰速率 Mbps
-	// PCIe 热插槽数量（仅关机时可修改，0 表示不修改）
-	PCIERootPorts *int `json:"pcie_root_ports,omitempty"`
-}
 
 type VmXMLUpdateRequest struct {
 	XML string `json:"xml" binding:"required"`
 }
 
-func sanitizeUserMemoryDynamicRequest(req *service.VMMemoryDynamicRequest, baseMemoryGB int) *service.VMMemoryDynamicRequest {
-	if req == nil || req.DynamicEnabled == nil {
-		return nil
-	}
-	if baseMemoryGB <= 0 {
-		baseMemoryGB = 1
-	}
-	enabled := *req.DynamicEnabled
-	backend := req.MemoryBackend
-	if backend != "virtio_mem" {
-		backend = "balloon"
-	}
-	if !enabled {
-		return &service.VMMemoryDynamicRequest{
-			DynamicEnabled: &enabled,
-			MemoryBackend:  backend,
-			MemoryInitial:  baseMemoryGB,
-		}
-	}
-	memoryMin := max(1, baseMemoryGB/2)
-	memoryMax := max(baseMemoryGB, (baseMemoryGB*13+9)/10)
-	memoryInitial := baseMemoryGB
-	autoBalloon := true
-	if backend == "virtio_mem" {
-		memoryInitial = memoryMin
-		autoBalloon = false
-	}
-	memoryCurrent := 0
-	if req.MemoryCurrent > 0 {
-		memoryCurrent = req.MemoryCurrent
-		if memoryCurrent < memoryInitial {
-			memoryCurrent = memoryInitial
-		}
-		if memoryCurrent > memoryMax {
-			memoryCurrent = memoryMax
-		}
-	}
-	return &service.VMMemoryDynamicRequest{
-		DynamicEnabled: &enabled,
-		MemoryBackend:  backend,
-		MemoryInitial:  memoryInitial,
-		MemoryMin:      memoryMin,
-		MemoryMax:      memoryMax,
-		AutoBalloon:    &autoBalloon,
-		MemoryCurrent:  memoryCurrent,
-	}
-}
-
-func buildVirtioMemRequestFromSpec(specMemoryGB int) *service.VMMemoryDynamicRequest {
+func buildVirtioMemRequestFromSpec(specMemoryGB int) *vm_memory.VMMemoryDynamicRequest {
 	if specMemoryGB <= 0 {
 		specMemoryGB = 1
 	}
@@ -122,7 +28,7 @@ func buildVirtioMemRequestFromSpec(specMemoryGB int) *service.VMMemoryDynamicReq
 	autoBalloon := false
 	initialGB := max(1, specMemoryGB/2)
 	maxGB := max(specMemoryGB, (specMemoryGB*13+9)/10)
-	return &service.VMMemoryDynamicRequest{
+	return &vm_memory.VMMemoryDynamicRequest{
 		DynamicEnabled: &enabled,
 		MemoryBackend:  "virtio_mem",
 		MemoryInitial:  initialGB,
@@ -172,37 +78,6 @@ type VmAddDiskItem struct {
 	StoragePoolID string `json:"storage_pool_id"` // 新增磁盘落盘存储位置
 }
 
-func respondVMListError(c *gin.Context, err error) {
-	if service.IsLibvirtUnavailableError(err) {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"code":    http.StatusServiceUnavailable,
-			"message": "libvirt 服务未启动或未就绪，当前无法获取虚拟机列表",
-		})
-		return
-	}
-
-	c.JSON(http.StatusInternalServerError, gin.H{
-		"code":    500,
-		"message": "获取虚拟机列表失败: " + err.Error(),
-	})
-}
-
-func parseBoolQuery(c *gin.Context, key string) bool {
-	switch strings.ToLower(strings.TrimSpace(c.Query(key))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
-}
-
-func buildVMListOptions(c *gin.Context) service.VMListOptions {
-	return service.VMListOptions{
-		IncludeResourceUsage: parseBoolQuery(c, "include_resource_usage"),
-		IncludeIP:            parseBoolQuery(c, "include_ip"),
-	}
-}
-
 // GetVmList 获取虚拟机列表
 func GetVmList(c *gin.Context) {
 	role, _ := c.Get("role")
@@ -221,51 +96,6 @@ func GetVmList(c *gin.Context) {
 		"message": "ok",
 		"data":    vms,
 	})
-}
-
-// GetVmListSSE SSE 实时推送虚拟机列表及状态
-func GetVmListSSE(c *gin.Context) {
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("Access-Control-Allow-Origin", "*")
-
-	clientGone := c.Request.Context().Done()
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	listOptions := buildVMListOptions(c)
-	role, _ := c.Get("role")
-	isAdmin := role == "admin"
-
-	// 立即发送一次
-	if isAdmin {
-		service.TriggerAdminVMCacheRefreshIfNeeded()
-	}
-	if vms, err := service.ListCachedVMs(listOptions); err == nil {
-		c.SSEvent("vm_list", vms)
-		c.Writer.Flush()
-	}
-
-	for {
-		select {
-		case <-clientGone:
-			return
-		case <-ticker.C:
-			if isAdmin {
-				service.TriggerAdminVMCacheRefreshIfNeeded()
-			}
-			vms, err := service.ListCachedVMs(listOptions)
-			if err != nil {
-				if service.IsLibvirtUnavailableError(err) {
-					c.SSEvent("vm_list", []service.VmInfo{})
-					c.Writer.Flush()
-				}
-				continue
-			}
-			c.SSEvent("vm_list", vms)
-			c.Writer.Flush()
-		}
-	}
 }
 
 // GetVmDetail 获取虚拟机详情
@@ -352,47 +182,6 @@ func GetVmIP(c *gin.Context) {
 			"ip_status": ipStatus,
 		},
 	})
-}
-
-// GetVmDetailSSE SSE 实时推送虚拟机详情
-func GetVmDetailSSE(c *gin.Context) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "虚拟机名称不能为空",
-		})
-		return
-	}
-
-	c.Header("Content-Type", "text/event-stream")
-	c.Header("Cache-Control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("Access-Control-Allow-Origin", "*")
-
-	clientGone := c.Request.Context().Done()
-	ticker := time.NewTicker(3 * time.Second)
-	defer ticker.Stop()
-
-	// 立即发送一次
-	if vm, err := service.GetVM(name); err == nil {
-		c.SSEvent("vm_detail", vm)
-		c.Writer.Flush()
-	}
-
-	for {
-		select {
-		case <-clientGone:
-			return
-		case <-ticker.C:
-			vm, err := service.GetVM(name)
-			if err != nil {
-				continue
-			}
-			c.SSEvent("vm_detail", vm)
-			c.Writer.Flush()
-		}
-	}
 }
 
 // OperateVm 操作虚拟机（开机/关机/强制关机/重启/重置）
@@ -686,7 +475,7 @@ func EditVm(c *gin.Context) {
 	}
 	if req.MemoryDynamic != nil {
 		if req.MemoryDynamic.MemoryCurrent > 0 {
-			if err := service.SetVMMemoryCurrent(name, req.MemoryDynamic.MemoryCurrent*1024, true); err != nil {
+			if err := vm_memory.SetVMMemoryCurrent(name, req.MemoryDynamic.MemoryCurrent*1024, true); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
 					"message": "调整当前内存失败: " + err.Error(),
@@ -695,7 +484,7 @@ func EditVm(c *gin.Context) {
 			}
 		}
 		if req.MemoryDynamic.DynamicEnabled != nil || req.MemoryDynamic.MemoryInitial > 0 || req.MemoryDynamic.MemoryMax > 0 || req.MemoryDynamic.MemoryMin > 0 || req.MemoryDynamic.AutoBalloon != nil {
-			msg, err := service.SetVMMemoryDynamicConfig(name, req.MemoryDynamic)
+			msg, err := vm_memory.SetVMMemoryDynamicConfig(name, req.MemoryDynamic)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
@@ -984,8 +773,8 @@ func EditVm(c *gin.Context) {
 		}
 		// 仅当管理员明确设置了非零值才直接应用
 		if inAvg > 0 || outAvg > 0 {
-			inAvgKB := service.MbpsToKBps(inAvg)
-			outAvgKB := service.MbpsToKBps(outAvg)
+			inAvgKB := bw.MbpsToKBps(inAvg)
+			outAvgKB := bw.MbpsToKBps(outAvg)
 			if err := service.ApplyVMBandwidth(name, inAvgKB, inAvgKB, inAvgKB*30, outAvgKB, outAvgKB, outAvgKB*30); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
@@ -1230,158 +1019,5 @@ func GetVmStatsHistory(c *gin.Context) {
 		"code":    200,
 		"message": "ok",
 		"data":    records,
-	})
-}
-
-// ==================== 救援系统 ====================
-
-// RescueVmRequest 救援系统请求
-type RescueVmRequest struct {
-	Action string `json:"action" binding:"required"` // start 或 stop
-}
-
-// RescueVm 启动/关闭救援系统（异步任务）
-func RescueVm(c *gin.Context) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "虚拟机名称不能为空",
-		})
-		return
-	}
-	if err := service.EnsureVMNotMigrating(name, "救援系统"); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
-		return
-	}
-
-	var req RescueVmRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "请指定操作类型（action: start/stop）",
-		})
-		return
-	}
-
-	if req.Action != "start" && req.Action != "stop" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "不支持的操作，仅支持 start 或 stop",
-		})
-		return
-	}
-
-	// 启动救援时检查是否已配置救援 ISO
-	if req.Action == "start" {
-		if !requireMaintenanceModeDisabled(c, "启动救援模式") {
-			return
-		}
-		rescueISO := config.GlobalConfig.RescueISO
-		if rescueISO == "" {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"code":    400,
-				"message": "未配置救援系统 ISO，请先在系统设置中选择救援 ISO",
-			})
-			return
-		}
-	}
-
-	// 获取操作用户
-	username, _ := c.Get("username")
-	usernameStr, _ := username.(string)
-
-	// 提交异步任务
-	params := map[string]string{
-		"vm_name": name,
-		"action":  req.Action,
-	}
-	task, err := taskqueue.SubmitWithStruct(model.TaskTypeRescue, params, usernameStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "提交救援任务失败: " + err.Error(),
-		})
-		return
-	}
-
-	actionText := "启动"
-	if req.Action == "stop" {
-		actionText = "关闭"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
-		"message": fmt.Sprintf("%s救援系统任务已提交", actionText),
-		"data": gin.H{
-			"task_id": task.ID,
-		},
-	})
-}
-
-// ResetLinuxPassword 重置虚拟机密码（异步任务）
-func ResetLinuxPassword(c *gin.Context) {
-	if !requireHighRiskVerification(c, "reset_vm_password") {
-		return
-	}
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "虚拟机名称不能为空",
-		})
-		return
-	}
-	if err := service.EnsureVMNotMigrating(name, "重置密码"); err != nil {
-		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
-		return
-	}
-
-	var req ResetLinuxPasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": "请提供用户名和新密码",
-		})
-		return
-	}
-
-	vm, err := service.GetVM(name)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"code":    404,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	if err := service.ValidateResetGuestPasswordParams(req.Username, req.Password, vm.OSType); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"code":    400,
-			"message": err.Error(),
-		})
-		return
-	}
-
-	operator, _ := c.Get("username")
-	task, err := service.SubmitResetLinuxPasswordTask(&service.ResetLinuxPasswordParams{
-		VMName:   name,
-		Username: req.Username,
-		Password: req.Password,
-	}, operator.(string))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code":    500,
-			"message": "提交重置密码任务失败: " + err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"code":    200,
-		"message": "重置密码任务已提交",
-		"data": gin.H{
-			"task_id": task.ID,
-		},
 	})
 }

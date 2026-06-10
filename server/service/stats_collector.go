@@ -10,6 +10,7 @@ import (
 
 	"kvm_console/logger"
 	"kvm_console/model"
+	"kvm_console/service/libvirt_rpc"
 )
 
 // ==================== 资源采集缓存 ====================
@@ -123,11 +124,11 @@ func collectAllVMStats() {
 
 // getRunningVMNamesRPC 通过 go-libvirt RPC 获取运行中的 VM 名称列表
 func getRunningVMNamesRPC() ([]string, error) {
-	domains, err := listAllDomainsRPC()
+	domains, err := libvirt_rpc.ListAllDomainsRPC()
 	if err != nil {
 		return nil, err
 	}
-	l, err := GetLibvirt()
+	l, err := libvirt_rpc.GetLibvirt()
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +148,7 @@ func getRunningVMNamesRPC() ([]string, error) {
 // collectVMStatsRPC 通过 go-libvirt RPC 采集单台 VM 的实时资源统计
 func collectVMStatsRPC(name string) (*VmStats, error) {
 	// 获取 vCPU 数量
-	vcpuCount, _, _, _, err := getDomainInfoRPC(name)
+	vcpuCount, _, _, _, err := libvirt_rpc.GetDomainInfoRPC(name)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +157,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 	}
 
 	// CPU 第一次采样（DomainGetInfo 返回的 cpu_time 为纳秒）
-	cpuTime1, err := getDomainCPUStatsRPC(name)
+	cpuTime1, err := libvirt_rpc.GetDomainCPUStatsRPC(name)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +165,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 	// 等待 1 秒再采样
 	time.Sleep(time.Second)
 
-	cpuTime2, err := getDomainCPUStatsRPC(name)
+	cpuTime2, err := libvirt_rpc.GetDomainCPUStatsRPC(name)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +182,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 	}
 
 	// 内存统计（替代 virsh dommemstat）
-	memStats, err := getDomainMemoryStatsRPC(name)
+	memStats, err := libvirt_rpc.GetDomainMemoryStatsRPC(name)
 	if err == nil {
 		stats.MemTotal = int64(memStats["actual"])
 		stats.MemUsed = stats.MemTotal - int64(memStats["unused"])
@@ -191,7 +192,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 	}
 
 	// 获取当前 XML 以提取网络接口和磁盘设备名
-	xmlStr, err := getDomainXMLRPC(name, 0)
+	xmlStr, err := libvirt_rpc.GetDomainXMLRPC(name, 0)
 	if err == nil {
 		// 网络统计（替代 virsh domifstat）
 		ifNames := extractInterfaceTargetDevsFromXML(xmlStr)
@@ -199,7 +200,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 			if ifName == "" || ifName == "-" {
 				continue
 			}
-			rxBytes, txBytes, ifErr := getDomainInterfaceStatsRPC(name, ifName)
+			rxBytes, txBytes, ifErr := libvirt_rpc.GetDomainInterfaceStatsRPC(name, ifName)
 			if ifErr == nil {
 				stats.NetRxBytes += rxBytes
 				stats.NetTxBytes += txBytes
@@ -209,7 +210,7 @@ func collectVMStatsRPC(name string) (*VmStats, error) {
 		// 磁盘 I/O 统计（替代 virsh domblkstat）——只取第一个非 cdrom 磁盘
 		dev := extractFirstDiskTargetDevFromXML(xmlStr)
 		if dev != "" {
-			rdBytes, wrBytes, blkErr := getDomainBlockStatsRPC(name, dev)
+			rdBytes, wrBytes, blkErr := libvirt_rpc.GetDomainBlockStatsRPC(name, dev)
 			if blkErr == nil {
 				stats.DiskRdBytes = rdBytes
 				stats.DiskWrBytes = wrBytes

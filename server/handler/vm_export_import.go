@@ -12,6 +12,9 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	vm_memory "kvm_console/service/vm/memory"
+	"kvm_console/service/vm/vmimport"
+	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 )
 
@@ -115,8 +118,8 @@ type ImportVMRequest struct {
 	PAE              *bool                           `json:"pae"`
 	RTCOffset        string                          `json:"rtc_offset"`
 	RTCStartDate     string                          `json:"rtc_startdate"`
-	GuestAgent       *service.VMGuestAgentConfig     `json:"guest_agent"`
-	SMBIOS1          *service.VMSMBIOS1Config        `json:"smbios1"`
+	GuestAgent       *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1          *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	BootType         string                          `json:"boot_type"`
 	MachineType      string                          `json:"machine_type"`
 	NicModel         string                          `json:"nic_model"`
@@ -126,7 +129,7 @@ type ImportVMRequest struct {
 	CPUAffinity      string                          `json:"cpu_affinity"`    // CPU 亲和性，如 "0,2,4"
 	TemplateRootPass string                          `json:"template_root_pass"`
 	TemplateUser     string                          `json:"template_user"`
-	MemoryDynamic    *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
+	MemoryDynamic    *vm_memory.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID         uint                            `json:"switch_id"`
 	SecurityGroupID  uint                            `json:"security_group_id"`
 	StartAfterImport *bool                           `json:"start_after_import"` // 导入完成后是否开启虚拟机，不传默认 true
@@ -200,7 +203,7 @@ func ImportVMHandler(c *gin.Context) {
 		req.SecurityGroupID = securityGroupID
 	}
 
-	params := &service.ImportVMParams{
+	params := &vmimport.ImportVMParams{
 		Name:             req.Name,
 		Remark:           req.Remark,
 		DiskFile:         req.DiskFile,

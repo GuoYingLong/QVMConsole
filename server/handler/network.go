@@ -10,12 +10,13 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	netservice "kvm_console/service/network"
 	"kvm_console/taskqueue"
 )
 
 // GetStaticIPList 获取静态 IP 列表（根据用户权限过滤）
 func GetStaticIPList(c *gin.Context) {
-	info, err := service.ListStaticIPs()
+	info, err := netservice.ListStaticIPs()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -35,7 +36,7 @@ func GetStaticIPList(c *gin.Context) {
 		}
 
 		// 过滤静态绑定
-		var filteredBindings []service.StaticIPInfo
+		var filteredBindings []netservice.StaticIPInfo
 		for _, b := range info.StaticBindings {
 			if vmSet[b.VMName] {
 				filteredBindings = append(filteredBindings, b)
@@ -44,7 +45,7 @@ func GetStaticIPList(c *gin.Context) {
 		info.StaticBindings = filteredBindings
 
 		// 过滤 DHCP 租约：只保留属于用户VM的租约（通过MAC关联的VM名称匹配）
-		var filteredLeases []service.DHCPLeaseInfo
+		var filteredLeases []netservice.DHCPLeaseInfo
 		for _, lease := range info.DHCPLeases {
 			if vmSet[lease.VMName] {
 				filteredLeases = append(filteredLeases, lease)
@@ -90,7 +91,7 @@ func BindStaticIP(c *gin.Context) {
 			return
 		}
 		if service.IsLightweightCloudUser(usernameStr) {
-			assignedIP, err := service.ResolvePortForwardTargetIP(req.VMName, "")
+			assignedIP, err := netservice.ResolvePortForwardTargetIP(req.VMName, "")
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"code":    500,
@@ -109,7 +110,7 @@ func BindStaticIP(c *gin.Context) {
 		}
 	}
 
-	assignedIP, err := service.BindStaticIP(req.VMName, req.IP)
+	assignedIP, err := netservice.BindStaticIP(req.VMName, req.IP)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -156,7 +157,7 @@ func UnbindStaticIP(c *gin.Context) {
 		}
 	}
 
-	if err := service.UnbindStaticIP(req.VMName); err != nil {
+	if err := netservice.UnbindStaticIP(req.VMName); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),
@@ -172,7 +173,7 @@ func UnbindStaticIP(c *gin.Context) {
 
 // GetPortForwardList 获取端口转发列表
 func GetPortForwardList(c *gin.Context) {
-	rules, err := service.ListPortForwards()
+	rules, err := netservice.ListPortForwards()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -185,7 +186,7 @@ func GetPortForwardList(c *gin.Context) {
 	if role != "admin" {
 		username, _ := c.Get("username")
 		targetUser := strings.TrimSpace(username.(string))
-		filtered := make([]service.PortForwardRule, 0, len(rules))
+		filtered := make([]netservice.PortForwardRule, 0, len(rules))
 		for _, rule := range rules {
 			if strings.TrimSpace(rule.OwnerUsername) == targetUser {
 				filtered = append(filtered, rule)
@@ -243,19 +244,20 @@ func AddPortForward(c *gin.Context) {
 		quotaDelta := portForwardProtocolCount(req.Protocol)
 		if service.IsLightweightCloudUser(usernameStr) {
 			if err := service.CheckLightweightVMPortForwardQuota(usernameStr, req.VMName, quotaDelta); err != nil {
+				// lightweight cloud quota check stays in service root
 				c.JSON(http.StatusForbidden, gin.H{
 					"code":    403,
 					"message": err.Error(),
 				})
 				return
 			}
-		} else if err := service.CheckUserPortForwardFeatureEnabled(usernameStr); err != nil {
+		} else if err := netservice.CheckUserPortForwardFeatureEnabled(usernameStr); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
 				"message": err.Error(),
 			})
 			return
-		} else if err := service.CheckUserPortForwardQuota(usernameStr, quotaDelta); err != nil {
+		} else if err := netservice.CheckUserPortForwardQuota(usernameStr, quotaDelta); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
 				"message": err.Error(),
@@ -264,7 +266,7 @@ func AddPortForward(c *gin.Context) {
 		}
 	}
 
-	if err := service.CheckRequestedPortForwardHostPortAvailable(req.HostPort, req.Protocol, nil); err != nil {
+	if err := netservice.CheckRequestedPortForwardHostPortAvailable(req.HostPort, req.Protocol, nil); err != nil {
 		c.JSON(http.StatusConflict, gin.H{
 			"code":    409,
 			"message": err.Error(),
@@ -272,7 +274,7 @@ func AddPortForward(c *gin.Context) {
 		return
 	}
 
-	vmIP, err := service.ResolvePortForwardTargetIP(req.VMName, req.VMIP)
+	vmIP, err := netservice.ResolvePortForwardTargetIP(req.VMName, req.VMIP)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -284,7 +286,7 @@ func AddPortForward(c *gin.Context) {
 	// 宿主机端口为空时自动分配
 	hostPort := req.HostPort
 	if hostPort == "" {
-		port, err := service.AutoAllocatePort()
+		port, err := netservice.AutoAllocatePort()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    500,
@@ -295,7 +297,7 @@ func AddPortForward(c *gin.Context) {
 		hostPort = strconv.Itoa(port)
 	}
 
-	params := &service.PortForwardAddParams{
+	params := &netservice.PortForwardAddParams{
 		VMIP:           vmIP,
 		HostPort:       hostPort,
 		VMPort:         req.VMPort,
@@ -305,7 +307,7 @@ func AddPortForward(c *gin.Context) {
 		CreatedByAdmin: roleStr == "admin",
 	}
 
-	if err := service.AddPortForward(params); err != nil {
+	if err := netservice.AddPortForward(params); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),
@@ -335,12 +337,12 @@ func AddPortForward(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
-		"message": fmt.Sprintf("端口转发已添加（%s → %s:%s）", service.BuildPortForwardAccessAddressForMessage(hostPort), vmIP, req.VMPort),
+		"message": fmt.Sprintf("端口转发已添加（%s → %s:%s）", netservice.BuildPortForwardAccessAddressForMessage(hostPort), vmIP, req.VMPort),
 		"data": gin.H{
 			"host_port":      hostPort,
 			"vm_ip":          vmIP,
-			"access_ip":      service.GetConfiguredPortForwardHostIP(),
-			"access_address": service.BuildPortForwardAccessAddressForMessage(hostPort),
+			"access_ip":      netservice.GetConfiguredPortForwardHostIP(),
+			"access_address": netservice.BuildPortForwardAccessAddressForMessage(hostPort),
 		},
 	})
 }
@@ -375,7 +377,7 @@ func UpdatePortForward(c *gin.Context) {
 		return
 	}
 
-	currentRule, err := service.GetPortForwardRuleByID(id)
+	currentRule, err := netservice.GetPortForwardRuleByID(id)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"code":    404,
@@ -425,7 +427,7 @@ func UpdatePortForward(c *gin.Context) {
 				})
 				return
 			}
-		} else if err := service.CheckUserPortForwardFeatureEnabled(usernameStr); err != nil {
+		} else if err := netservice.CheckUserPortForwardFeatureEnabled(usernameStr); err != nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    403,
 				"message": err.Error(),
@@ -434,7 +436,7 @@ func UpdatePortForward(c *gin.Context) {
 		}
 	}
 
-	if err := service.CheckRequestedPortForwardHostPortAvailable(req.HostPort, req.Protocol, currentRule); err != nil {
+	if err := netservice.CheckRequestedPortForwardHostPortAvailable(req.HostPort, req.Protocol, currentRule); err != nil {
 		c.JSON(http.StatusConflict, gin.H{
 			"code":    409,
 			"message": err.Error(),
@@ -449,7 +451,7 @@ func UpdatePortForward(c *gin.Context) {
 	vmIP := strings.TrimSpace(req.VMIP)
 	if service.IsVPCBoundVM(comment) || vmIP != "" {
 		var resolveErr error
-		vmIP, resolveErr = service.ResolvePortForwardTargetIP(comment, vmIP)
+		vmIP, resolveErr = netservice.ResolvePortForwardTargetIP(comment, vmIP)
 		if resolveErr != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    500,
@@ -458,7 +460,7 @@ func UpdatePortForward(c *gin.Context) {
 			return
 		}
 	}
-	if err := service.UpdatePortForward(id, &service.PortForwardUpdateParams{
+	if err := netservice.UpdatePortForward(id, &netservice.PortForwardUpdateParams{
 		VMIP:           vmIP,
 		VMPort:         req.VMPort,
 		HostPort:       req.HostPort,
@@ -515,7 +517,7 @@ func BatchDeletePortForward(c *gin.Context) {
 		username, _ := c.Get("username")
 		usernameStr := strings.TrimSpace(username.(string))
 		for _, id := range req.IDs {
-			rule, err := service.GetPortForwardRuleByID(id)
+			rule, err := netservice.GetPortForwardRuleByID(id)
 			if err != nil {
 				c.JSON(http.StatusNotFound, gin.H{
 					"code":    404,
@@ -533,7 +535,7 @@ func BatchDeletePortForward(c *gin.Context) {
 		}
 	}
 
-	if err := service.DeletePortForwards(req.IDs); err != nil {
+	if err := netservice.DeletePortForwards(req.IDs); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),
@@ -566,7 +568,7 @@ func DeletePortForward(c *gin.Context) {
 	if role != "admin" {
 		username, _ := c.Get("username")
 		usernameStr := strings.TrimSpace(username.(string))
-		rule, err := service.GetPortForwardRuleByID(id)
+		rule, err := netservice.GetPortForwardRuleByID(id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{
 				"code":    404,
@@ -583,7 +585,7 @@ func DeletePortForward(c *gin.Context) {
 		}
 	}
 
-	if err := service.DeletePortForward(id); err != nil {
+	if err := netservice.DeletePortForward(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),
@@ -599,7 +601,7 @@ func DeletePortForward(c *gin.Context) {
 
 // SavePortForwardRules 持久化端口转发规则
 func SavePortForwardRules(c *gin.Context) {
-	if err := service.SavePortForwardRules(); err != nil {
+	if err := netservice.SavePortForwardRules(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),
@@ -682,7 +684,7 @@ func DeletePortForwardByRuleKey(c *gin.Context) {
 		return
 	}
 
-	rules, err := service.ListPortForwards()
+	rules, err := netservice.ListPortForwards()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -690,7 +692,7 @@ func DeletePortForwardByRuleKey(c *gin.Context) {
 		})
 		return
 	}
-	var target *service.PortForwardRule
+	var target *netservice.PortForwardRule
 	for i := range rules {
 		if strings.TrimSpace(rules[i].RuleKey) == ruleKey {
 			target = &rules[i]
@@ -838,7 +840,7 @@ func GetPortForwardWhitelistSummary(c *gin.Context) {
 
 // GetUFWStatus 获取 UFW 状态
 func GetUFWStatus(c *gin.Context) {
-	status, err := service.GetUFWStatus()
+	status, err := netservice.GetUFWStatus()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -871,7 +873,7 @@ func ManageUFWRule(c *gin.Context) {
 		return
 	}
 
-	if err := service.ManageUFWRule(req.Action, req.Rule); err != nil {
+	if err := netservice.ManageUFWRule(req.Action, req.Rule); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
 			"message": err.Error(),

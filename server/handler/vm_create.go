@@ -7,6 +7,9 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	vm_memory "kvm_console/service/vm/memory"
+	"kvm_console/service/vm/vmimport"
+	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 )
 
@@ -29,8 +32,8 @@ type CreateVmRequest struct {
 	PAE             *bool                           `json:"pae"`
 	RTCOffset       string                          `json:"rtc_offset"`
 	RTCStartDate    string                          `json:"rtc_startdate"`
-	GuestAgent      *service.VMGuestAgentConfig     `json:"guest_agent"`
-	SMBIOS1         *service.VMSMBIOS1Config        `json:"smbios1"`
+	GuestAgent      *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1         *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	OSType          string                          `json:"os_type"`
 	MachineType     string                          `json:"machine_type"`
 	BootType        string                          `json:"boot_type"`
@@ -42,7 +45,7 @@ type CreateVmRequest struct {
 	CPUAffinity     string                          `json:"cpu_affinity"` // CPU 亲和性，如 "0,2,4"
 	VirtType        string                          `json:"virt_type"`    // 虚拟化方案: kvm/qemu
 	Arch            string                          `json:"arch"`      // 目标架构: x86_64/aarch64/riscv64
-	MemoryDynamic   *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
+	MemoryDynamic   *vm_memory.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID        uint                            `json:"switch_id"`
 	SecurityGroupID uint                            `json:"security_group_id"`
 	ExtraNics       []service.AddVMInterfaceRequest `json:"extra_nics"`
@@ -253,8 +256,8 @@ type ImportDiskByPathRequest struct {
 	PAE              *bool                            `json:"pae"`
 	RTCOffset        string                           `json:"rtc_offset"`
 	RTCStartDate     string                           `json:"rtc_startdate"`
-	GuestAgent       *service.VMGuestAgentConfig      `json:"guest_agent"`
-	SMBIOS1          *service.VMSMBIOS1Config         `json:"smbios1"`
+	GuestAgent       *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1          *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	BootType         string                           `json:"boot_type"`
 	MachineType      string                           `json:"machine_type"`
 	NicModel         string                           `json:"nic_model"`
@@ -264,11 +267,11 @@ type ImportDiskByPathRequest struct {
 	CPUAffinity      string                           `json:"cpu_affinity"`    // CPU 亲和性，如 "0,2,4"
 	TemplateRootPass string                           `json:"template_root_pass"`
 	TemplateUser     string                           `json:"template_user"`
-	MemoryDynamic    *service.VMMemoryDynamicRequest  `json:"memory_dynamic"`
+	MemoryDynamic    *vm_memory.VMMemoryDynamicRequest  `json:"memory_dynamic"`
 	SwitchID         uint                             `json:"switch_id"`
 	SecurityGroupID  uint                             `json:"security_group_id"`
 	ExtraNics        []service.AddVMInterfaceRequest  `json:"extra_nics"`
-	ExtraImportDisks []service.ExtraImportDiskEntry    `json:"extra_import_disks"`
+	ExtraImportDisks []vmimport.ExtraImportDiskEntry    `json:"extra_import_disks"`
 	SystemDiskIOPS   *service.DiskIOPSTune            `json:"system_disk_iops"` // 系统盘 IOPS 限制（仅管理员）
 	StartAfterImport *bool                            `json:"start_after_import"` // 导入完成后是否开启虚拟机，不传默认 true
 }
@@ -307,7 +310,7 @@ func AdminImportDisk(c *gin.Context) {
 		startAfterImport = *req.StartAfterImport
 	}
 
-	params := &service.ImportDiskByPathParams{
+	params := &vmimport.ImportDiskByPathParams{
 		Name:             req.Name,
 		Remark:           req.Remark,
 		DiskPath:         req.DiskPath,

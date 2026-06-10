@@ -27,8 +27,11 @@ scripts/
 *.sln
 *.sw?
 *.exe
+*.test
 kvm-console-linux-amd64
 kvm-console
 kvm-console.exe
+kvm_console
+server/tmp/
 release/
 docs-web

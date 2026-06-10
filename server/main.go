@@ -13,6 +13,13 @@ import (
 	"kvm_console/model"
 	"kvm_console/router"
 	"kvm_console/service"
+	clonepkg "kvm_console/service/clone"
+	"kvm_console/service/libvirt_rpc"
+	netpkg "kvm_console/service/network"
+	"kvm_console/service/snapshot"
+	vmmemory "kvm_console/service/vm/memory"
+	vmimport "kvm_console/service/vm/vmimport"
+	vmmigration "kvm_console/service/vm/migration"
 	"kvm_console/taskqueue"
 	"kvm_console/utils"
 )
@@ -57,10 +64,10 @@ func main() {
 	}
 
 	// 初始化 go-libvirt RPC 连接（连接失败阻止启动）
-	if err := service.InitLibvirtRPC(); err != nil {
+	if err := libvirt_rpc.InitLibvirtRPC(); err != nil {
 		log.Fatal("go-libvirt 连接失败，程序无法启动: ", err)
 	}
-	defer service.CloseLibvirt()
+	defer libvirt_rpc.CloseLibvirt()
 
 	if err := service.BootstrapVMCacheFromHost(); err != nil {
 	logger.App.Warn("启动时同步虚拟机缓存失败，已保留数据库旧缓存", "error", err)
@@ -71,6 +78,9 @@ func main() {
 	// 安全检查（数据库设置加载完成后）
 	config.ValidateSecurity()
 
+	// 初始化 clone 子包依赖
+	initCloneDeps()
+
 	// 注册任务处理器
 	registerTaskHandlers()
 
@@ -79,7 +89,7 @@ func main() {
 
 	// 启动资源采集器（后台定时采集VM资源数据）
 	service.StartStatsCollector()
-	service.StartMemoryBalloonScheduler()
+	vmmemory.StartMemoryBalloonScheduler()
 	service.StartSchedulerEventCleanup()
 	service.StartPortForwardHTTPProbeScheduler()
 	service.StartVMScheduleRunner()
@@ -91,7 +101,7 @@ func main() {
 	if err := service.EnsureAllNetworkBridgesRuntime(); err != nil {
 	logger.App.Warn("恢复桥接网桥失败", "error", err)
 	}
-	if err := service.RestorePortForwardRules(); err != nil {
+	if err := netpkg.RestorePortForwardRules(); err != nil {
 	logger.App.Warn("恢复端口转发规则失败", "error", err)
 	}
 	if err := service.EnsureAllVPCSwitchRuntime(); err != nil {
@@ -318,11 +328,11 @@ func registerTaskHandlers() {
 
 	// 跨节点虚拟机迁移任务
 	taskqueue.RegisterHandler(model.TaskTypeVMMigrate, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
-		params, err := service.ParseVMMigrationTaskParams(task.Params)
+		params, err := vmmigration.ParseVMMigrationTaskParams(task.Params)
 		if err != nil {
 			return "", fmt.Errorf("解析参数失败: %w", err)
 		}
-		result, err := service.ExecuteVMMigration(ctx, params, progress)
+		result, err := vmmigration.ExecuteVMMigration(ctx, params, progress)
 		if err != nil {
 			return "", err
 		}
@@ -447,7 +457,7 @@ func registerTaskHandlers() {
 			if params.PauseForMemorySnapshot != nil {
 				pauseForMemorySnapshot = *params.PauseForMemorySnapshot
 			}
-			err := service.CreateSnapshotWithOptions(params.VmName, params.SnapName, params.Description, params.IncludeMemory, params.AutoFixNVRAM, pauseForMemorySnapshot, progress)
+			err := snapshot.CreateSnapshotWithOptions(params.VmName, params.SnapName, params.Description, params.IncludeMemory, params.AutoFixNVRAM, pauseForMemorySnapshot, progress)
 			if err != nil {
 				return "", err
 			}
@@ -456,7 +466,7 @@ func registerTaskHandlers() {
 
 		case "revert":
 			progress(10, fmt.Sprintf("正在将 %s 恢复到快照 %s ...", params.VmName, params.SnapName))
-			err := service.RevertSnapshot(params.VmName, params.SnapName)
+			err := snapshot.RevertSnapshot(params.VmName, params.SnapName)
 			if err != nil {
 				return "", err
 			}
@@ -465,7 +475,7 @@ func registerTaskHandlers() {
 
 		case "delete":
 			progress(10, fmt.Sprintf("正在删除 %s 的快照 %s ...", params.VmName, params.SnapName))
-			err := service.DeleteSnapshot(params.VmName, params.SnapName)
+			err := snapshot.DeleteSnapshot(params.VmName, params.SnapName)
 			if err != nil {
 				return "", err
 			}
@@ -474,7 +484,7 @@ func registerTaskHandlers() {
 
 		case "delete_all":
 			progress(10, fmt.Sprintf("正在删除 %s 的全部快照 ...", params.VmName))
-			deleted, err := service.DeleteAllSnapshots(params.VmName, progress)
+			deleted, err := snapshot.DeleteAllSnapshots(params.VmName, progress)
 			if err != nil {
 				return "", err
 			}
@@ -568,11 +578,11 @@ func registerTaskHandlers() {
 
 	// 导入虚拟机任务
 	taskqueue.RegisterHandler(model.TaskTypeImport, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
-		params, err := service.ParseImportVMParams(task.Params)
+		params, err := vmimport.ParseImportVMParams(task.Params)
 		if err != nil {
 			return "", fmt.Errorf("解析参数失败: %w", err)
 		}
-		result, err := service.ImportVM(ctx, params, progress)
+		result, err := vmimport.ImportVM(ctx, params, progress)
 		if err != nil {
 			return "", err
 		}
@@ -589,11 +599,11 @@ func registerTaskHandlers() {
 	})
 	// 管理员通过绝对路径导入磁盘任务
 	taskqueue.RegisterHandler(model.TaskTypeImportDisk, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
-		params, err := service.ParseImportDiskByPathParams(task.Params)
+		params, err := vmimport.ParseImportDiskByPathParams(task.Params)
 		if err != nil {
 			return "", fmt.Errorf("解析参数失败: %w", err)
 		}
-		result, err := service.ImportDiskByPath(ctx, params, progress)
+		result, err := vmimport.ImportDiskByPath(ctx, params, progress)
 		if err != nil {
 			return "", err
 		}
@@ -612,11 +622,11 @@ func registerTaskHandlers() {
 	})
 	// 管理员为已有虚拟机导入磁盘任务
 	taskqueue.RegisterHandler(model.TaskTypeImportDiskAttach, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
-		params, err := service.ParseImportDiskForExistingVMParams(task.Params)
+		params, err := vmimport.ParseImportDiskForExistingVMParams(task.Params)
 		if err != nil {
 			return "", fmt.Errorf("解析参数失败: %w", err)
 		}
-		dev, err := service.ImportDiskForExistingVM(ctx, params, progress)
+		dev, err := vmimport.ImportDiskForExistingVM(ctx, params, progress)
 		if err != nil {
 			return "", err
 		}
@@ -879,7 +889,7 @@ func applyLinkedCloneIOPS(params *service.LinkedCloneParams) {
 	}
 }
 
-func applyImportDiskIOPS(params *service.ImportDiskByPathParams) {
+func applyImportDiskIOPS(params *vmimport.ImportDiskByPathParams) {
 	if params.SystemDiskIOPS != nil && (params.SystemDiskIOPS.TotalIopsSec > 0 || params.SystemDiskIOPS.ReadIopsSec > 0 || params.SystemDiskIOPS.WriteIopsSec > 0) {
 		if dev := getFirstDiskDevice(params.Name); dev != "" {
 			if err := service.SetDiskIOPSTune(params.Name, dev, params.SystemDiskIOPS); err != nil {
@@ -926,4 +936,98 @@ func getNthDiskDevice(vmName string, n int) string {
 		}
 	}
 	return ""
+}
+
+// initCloneDeps 初始化 clone 子包的依赖注入
+func initCloneDeps() {
+	clonepkg.InitDeps(&clonepkg.Deps{
+		// VM lifecycle
+		StartVM:                     service.StartVM,
+		StartVMPreserveRebootAction: service.StartVMPreserveRebootAction,
+		GetVMInactiveDomainXML:      service.GetVMInactiveDomainXML,
+		SetVMInactiveDomainXML:      service.SetVMInactiveDomainXML,
+		SetVMRemark:                 service.SetVMRemark,
+		SetVMFreeze:                 service.SetVMFreeze,
+		FixOnReboot:                 service.FixOnReboot,
+
+		// Template
+		GetTemplateMeta:           service.GetTemplateMetaForClone,
+		GetTemplateMinDiskSizeGB:  service.GetTemplateMinDiskSizeGB,
+		EnsureTemplatePath:        service.EnsureTemplatePathExported,
+		NormalizeTemplateBootType: service.NormalizeTemplateBootType,
+		DetectTemplateBootType:    service.DetectTemplateBootType,
+		ResolveCloneDiskSizeGB:    service.ResolveCloneDiskSizeGB,
+		WriteVMTemplateSource:     service.WriteVMTemplateSource,
+
+		// VM validation / normalization
+		ValidateVMName:                 service.ValidateVMName,
+		NormalizeVMNicModel:            service.NormalizeVMNicModel,
+		NormalizeVMDiskBus:             service.NormalizeVMDiskBus,
+		NormalizeVMCPUTopologyMode:     service.NormalizeVMCPUTopologyMode,
+		NormalizeVMFirstBootRebootMode: service.NormalizeVMFirstBootRebootMode,
+		VMCPULimitUnlimited:            service.VMCPULimitUnlimited,
+		ValidateVMCPULimitPercent:      service.ValidateVMCPULimitPercent,
+
+		// Resource checks
+		ResolveVMStorageDir: service.ResolveVMStorageDir,
+		CheckStorageSpace:   service.CheckStorageSpace,
+		CheckDirWritable:    service.CheckDirWritable,
+		CheckHostMemory:     service.CheckHostMemory,
+
+		// Network / OVS
+		EnsureOVSNetworkReady:         service.EnsureOVSNetworkReady,
+		BuildOVSVirtInstallNetworkArg: service.BuildOVSVirtInstallNetworkArg,
+		BuildOVSInterfaceXML:          service.BuildOVSInterfaceXML,
+		GetOVSStaticIPByMAC:           service.GetOVSStaticIPByMAC,
+		ListAllVPCStaticHosts:         service.ListAllVPCStaticHostsForClone,
+		GetOVSLeaseIPByMAC:            service.GetOVSLeaseIPByMAC,
+
+		// XML modification helpers
+		ApplyRTCConfigToDomainXML:          service.ApplyRTCConfigToDomainXML,
+		ApplyVMAPICToDomainXML:             service.ApplyVMAPICToDomainXML,
+		ApplyCPUTopologyModeToDomainXML:    service.ApplyCPUTopologyModeToDomainXML,
+		ApplyVMCPULimitToDomainXML:         service.ApplyVMCPULimitToDomainXML,
+		ApplyCPUAffinityIfSet:              service.ApplyCPUAffinityIfSet,
+		ApplyVPCSwitchToDomainXML:          service.ApplyVPCSwitchToDomainXML,
+		ApplyFirstBootRebootModeToDomainXML: service.ApplyFirstBootRebootModeToDomainXML,
+		EffectiveTopologyVCPU:              service.EffectiveTopologyVCPU,
+		ShouldUseWindowsFirstBootColdReboot: service.ShouldUseWindowsFirstBootColdReboot,
+		CompleteWindowsFirstBootColdReboot:  service.CompleteWindowsFirstBootColdReboot,
+		BuildVCPUTag:                       service.BuildVCPUTag,
+		ResolveRTCOffset:                   service.ResolveRTCOffset,
+		NormalizeRTCStartDate:              service.NormalizeRTCStartDate,
+		ParseRTCStartDateToEpoch:           service.ParseRTCStartDateToEpoch,
+		VMRTCStartDateNow:                  service.VMRTCStartDateNow,
+		VMRTCOffsetAbsolute:                service.VMRTCOffsetAbsolute,
+		InjectPCIERootPorts:                service.InjectPCIERootPortsExported,
+
+		// Disk / storage
+		AddExtraDisksForVM: service.AddExtraDisksForVM,
+		GetUserDiskDir:     service.GetUserDiskDir,
+		CheckStorageQuota:  service.CheckStorageQuota,
+
+		// VM credentials
+		SaveVMCredential: service.SaveVMCredential,
+
+		// VM cleanup
+		DeleteVMStatsRecords:          service.DeleteVMStatsRecords,
+		DeleteVMRuntimeRecord:         service.DeleteVMRuntimeRecord,
+		CleanupVMVPCBinding:           service.CleanupVMVPCBinding,
+		CleanupLightweightVMResources: service.CleanupLightweightVMResources,
+		DeleteVMSchedules:             service.DeleteVMSchedules,
+
+		// VM first boot
+		WaitForVMShutOff: service.WaitForVMShutOff,
+
+		// Utility
+		FirstNonEmpty: service.FirstNonEmpty,
+		GetVMDiskInfo:  service.GetVMDiskInfoForClone,
+
+		// Disk expansion
+		PrepareFnOSSystemDiskExpansion:    service.PrepareFnOSSystemDiskExpansionExported,
+		PrepareWindowsSystemDiskExpansion: service.PrepareWindowsSystemDiskExpansionExported,
+
+		// Migration hook
+		HookEnsureVMNotMigrating: service.HookEnsureVMNotMigrating,
+	})
 }

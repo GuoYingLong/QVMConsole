@@ -7,19 +7,9 @@ import (
 	"regexp"
 	"strings"
 
+	"kvm_console/service/vm_xml"
 	"kvm_console/utils"
 )
-
-var vmXMLTempNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
-
-type vmXMLDomainEnvelope struct {
-	XMLName xml.Name `xml:"domain"`
-	Name    string   `xml:"name"`
-}
-
-func normalizeDomainXMLForEdit(xmlContent string) string {
-	return strings.ReplaceAll(xmlContent, "\r\n", "\n")
-}
 
 // ValidateVMInactiveDomainXML 校验用于编辑的 domain XML。
 func ValidateVMInactiveDomainXML(name, xmlContent string) error {
@@ -31,7 +21,7 @@ func ValidateVMInactiveDomainXML(name, xmlContent string) error {
 	decoder := xml.NewDecoder(strings.NewReader(trimmed))
 	decoder.Strict = true
 
-	var domain vmXMLDomainEnvelope
+	var domain vm_xml.VMXMLDomainEnvelope
 	if err := decoder.Decode(&domain); err != nil {
 		return fmt.Errorf("XML 格式不合法: %w", err)
 	}
@@ -51,7 +41,7 @@ func ValidateVMInactiveDomainXML(name, xmlContent string) error {
 }
 
 func buildDomainXMLTempPattern(name string) string {
-	safeName := vmXMLTempNameSanitizer.ReplaceAllString(strings.TrimSpace(name), "_")
+	safeName := vm_xml.VMXMLTempNameSanitizer.ReplaceAllString(strings.TrimSpace(name), "_")
 	if safeName == "" {
 		safeName = "vm"
 	}
@@ -64,12 +54,12 @@ func GetVMInactiveDomainXML(name string) (string, error) {
 	if xmlResult.Error != nil {
 		return "", fmt.Errorf("获取虚拟机 XML 失败: %s", xmlResult.Stderr)
 	}
-	return normalizeDomainXMLForEdit(xmlResult.Stdout), nil
+	return vm_xml.NormalizeDomainXMLForEdit(xmlResult.Stdout), nil
 }
 
 // SetVMInactiveDomainXML 写入虚拟机持久化配置对应的 domain XML。
 func SetVMInactiveDomainXML(name, xmlContent string) error {
-	normalized := normalizeDomainXMLForEdit(xmlContent)
+	normalized := vm_xml.NormalizeDomainXMLForEdit(xmlContent)
 	if err := ValidateVMInactiveDomainXML(name, normalized); err != nil {
 		return err
 	}

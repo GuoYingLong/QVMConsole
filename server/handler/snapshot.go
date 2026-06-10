@@ -7,6 +7,7 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	"kvm_console/service/snapshot"
 	"kvm_console/taskqueue"
 )
 
@@ -38,7 +39,7 @@ func GetSnapshots(c *gin.Context) {
 	role, _ := c.Get("role")
 	roleStr, _ := role.(string)
 
-	snapshots, err := service.ListSnapshots(name)
+	snapshots, err := snapshot.ListSnapshots(name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -51,7 +52,7 @@ func GetSnapshots(c *gin.Context) {
 		"code":    200,
 		"message": "ok",
 		"data":    snapshots,
-		"quota":   service.BuildVMSnapshotQuotaInfo(usernameStr, roleStr, name, len(snapshots)),
+		"quota":   snapshot.BuildVMSnapshotQuotaInfo(usernameStr, roleStr, name, len(snapshots)),
 	})
 }
 
@@ -70,7 +71,7 @@ func CreateSnapshot(c *gin.Context) {
 		})
 		return
 	}
-	snapName, err := service.NormalizeSnapshotName(req.Name)
+	snapName, err := snapshot.NormalizeSnapshotName(req.Name)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -94,7 +95,7 @@ func CreateSnapshot(c *gin.Context) {
 	role, _ := c.Get("role")
 	roleStr, _ := role.(string)
 
-	if err := service.CheckVMSnapshotQuota(usernameStr, roleStr, vmName, 1); err != nil {
+	if err := snapshot.CheckVMSnapshotQuota(usernameStr, roleStr, vmName, 1); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{
 			"code":    403,
 			"message": err.Error(),
@@ -103,7 +104,7 @@ func CreateSnapshot(c *gin.Context) {
 	}
 
 	if req.IncludeMemory {
-		unsupported, message, err := service.CheckInternalSnapshotVirtFSUnsupported(vmName)
+		unsupported, message, err := snapshot.CheckInternalSnapshotVirtFSUnsupported(vmName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    500,
@@ -121,7 +122,7 @@ func CreateSnapshot(c *gin.Context) {
 	}
 
 	if req.IncludeMemory && !req.AutoFixNVRAM {
-		required, message, err := service.CheckInternalSnapshotNVRAMRepairRequired(vmName)
+		required, message, err := snapshot.CheckInternalSnapshotNVRAMRepairRequired(vmName)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"code":    500,

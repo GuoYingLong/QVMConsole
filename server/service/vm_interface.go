@@ -29,7 +29,7 @@ func attachVMInterface(vmName string, sw model.VPCSwitch, nicModel string, inter
 
 	if state == "running" {
 		// 运行中：热插网口
-		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-attach-%s-%d.xml", safeVMXMLFileName(vmName), interfaceOrder))
+		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-attach-%s-%d.xml", SafeVMXMLFileName(vmName), interfaceOrder))
 		if err := os.WriteFile(xmlPath, []byte(interfaceXML), 0600); err != nil {
 			return fmt.Errorf("写入网口 XML 失败: %w", err)
 		}
@@ -37,12 +37,12 @@ func attachVMInterface(vmName string, sw model.VPCSwitch, nicModel string, inter
 
 		attach := utils.ExecCommandWithTimeout("virsh", 60*time.Second, "attach-device", vmName, xmlPath, "--live")
 		if attach.Error != nil {
-			return fmt.Errorf("热插网口失败: %s", firstNonEmpty(attach.Stderr, attach.Error.Error()))
+			return fmt.Errorf("热插网口失败: %s", FirstNonEmpty(attach.Stderr, attach.Error.Error()))
 		}
 		// 同时持久化
 		attachPersist := utils.ExecCommandWithTimeout("virsh", 60*time.Second, "attach-device", vmName, xmlPath, "--config")
 		if attachPersist.Error != nil {
-			logger.App.Warn("持久化网口失败（运行态已生效）", "detail", firstNonEmpty(attachPersist.Stderr, attachPersist.Error.Error()))
+			logger.App.Warn("持久化网口失败（运行态已生效）", "detail", FirstNonEmpty(attachPersist.Stderr, attachPersist.Error.Error()))
 		}
 	} else {
 		// 关机状态：修改持久化 XML
@@ -63,7 +63,7 @@ func attachVMInterface(vmName string, sw model.VPCSwitch, nicModel string, inter
 
 		updatedXML := xmlText[:devicesEnd] + interfaceXML + "\n" + xmlText[devicesEnd:]
 
-		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-define-%s-%d.xml", safeVMXMLFileName(vmName), interfaceOrder))
+		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-define-%s-%d.xml", SafeVMXMLFileName(vmName), interfaceOrder))
 		if err := os.WriteFile(xmlPath, []byte(updatedXML), 0600); err != nil {
 			return fmt.Errorf("写入 VM 持久化 XML 失败: %w", err)
 		}
@@ -99,13 +99,13 @@ func detachVMInterface(vmName string, interfaceOrder int) error {
 	}
 
 	// 清理运行时特有元素以便 detach
-	cleanBlock := stripRuntimeOnlyInterfaceElements(interfaceBlock)
+	cleanBlock := StripRuntimeOnlyInterfaceElements(interfaceBlock)
 
 	state := strings.TrimSpace(utils.ExecCommand("virsh", "domstate", vmName).Stdout)
 
 	if state == "running" {
 		// 运行中：热拔网口
-		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-detach-%s-%d.xml", safeVMXMLFileName(vmName), interfaceOrder))
+		xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-detach-%s-%d.xml", SafeVMXMLFileName(vmName), interfaceOrder))
 		if err := os.WriteFile(xmlPath, []byte(cleanBlock), 0600); err != nil {
 			return fmt.Errorf("写入 detach XML 失败: %w", err)
 		}
@@ -113,12 +113,12 @@ func detachVMInterface(vmName string, interfaceOrder int) error {
 
 		detach := utils.ExecCommandWithTimeout("virsh", 60*time.Second, "detach-device", vmName, xmlPath, "--live")
 		if detach.Error != nil {
-			return fmt.Errorf("热拔网口失败: %s", firstNonEmpty(detach.Stderr, detach.Error.Error()))
+			return fmt.Errorf("热拔网口失败: %s", FirstNonEmpty(detach.Stderr, detach.Error.Error()))
 		}
 		// 同时持久化
 		detachPersist := utils.ExecCommandWithTimeout("virsh", 60*time.Second, "detach-device", vmName, xmlPath, "--config")
 		if detachPersist.Error != nil {
-			logger.App.Warn("持久化移除网口失败（运行态已生效）", "detail", firstNonEmpty(detachPersist.Stderr, detachPersist.Error.Error()))
+			logger.App.Warn("持久化移除网口失败（运行态已生效）", "detail", FirstNonEmpty(detachPersist.Stderr, detachPersist.Error.Error()))
 		}
 	} else {
 		// 关机状态：修改持久化 XML，从 XML 中移除对应的 interface 块
@@ -139,7 +139,7 @@ func detachVMInterface(vmName string, interfaceOrder int) error {
 			if foundCount == interfaceOrder {
 				// 找到目标，移除
 				updatedXML := xmlText[:start] + xmlText[end:]
-				xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-define-%s-%d.xml", safeVMXMLFileName(vmName), interfaceOrder))
+				xmlPath := filepath.Join(os.TempDir(), fmt.Sprintf("_vm-nic-define-%s-%d.xml", SafeVMXMLFileName(vmName), interfaceOrder))
 				if err := os.WriteFile(xmlPath, []byte(updatedXML), 0600); err != nil {
 					return fmt.Errorf("写入 VM 持久化 XML 失败: %w", err)
 				}

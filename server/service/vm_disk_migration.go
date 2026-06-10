@@ -81,15 +81,15 @@ func GetVMDiskMigrationOptions(vmName string) (*VMDiskMigrationOptions, error) {
 	if vmName == "" {
 		return nil, fmt.Errorf("虚拟机名称不能为空")
 	}
-	if !domainExists(vmName) {
+	if !DomainExists(vmName) {
 		return nil, fmt.Errorf("虚拟机不存在")
 	}
 
-	state := getDomainState(vmName)
+	state := GetDomainState(vmName)
 	options := &VMDiskMigrationOptions{
 		VMName:      vmName,
 		SourceState: state,
-		Mode:        detectMigrationModeFromState(state),
+		Mode:        HookDetectMigrationModeFromState(state),
 	}
 	if err := validateVMDiskMigrationState(state); err != nil {
 		options.Warnings = append(options.Warnings, err.Error())
@@ -130,7 +130,7 @@ func ExecuteVMDiskMigration(ctx context.Context, params VMDiskMigrationTaskParam
 	}
 
 	progress(12, fmt.Sprintf("硬盘 %s 将按%s迁移到目标存储...", plan.Device, diskMigrationModeLabel(plan.Mode)))
-	if plan.Mode == MigrationModeLive {
+	if plan.Mode == HookMigrationModeLive {
 		err = executeLiveVMDiskMigration(ctx, plan, progress)
 	} else {
 		err = executeColdVMDiskMigration(ctx, plan, progress)
@@ -162,7 +162,7 @@ func buildVMDiskMigrationPlan(params VMDiskMigrationTaskParams) (*vmDiskMigratio
 	if poolID == "" {
 		return nil, fmt.Errorf("请选择目标存储")
 	}
-	if !domainExists(vmName) {
+	if !DomainExists(vmName) {
 		return nil, fmt.Errorf("虚拟机不存在")
 	}
 	if hasExternal, names, err := CheckVMSnapshotSafety(vmName); err != nil {
@@ -218,14 +218,14 @@ func buildVMDiskMigrationPlan(params VMDiskMigrationTaskParams) (*vmDiskMigratio
 		return nil, fmt.Errorf("目标存储可用空间不足")
 	}
 
-	state := getDomainState(vmName)
+	state := GetDomainState(vmName)
 	if err := validateVMDiskMigrationState(state); err != nil {
 		return nil, err
 	}
 	return &vmDiskMigrationPlan{
 		VMName:        vmName,
 		Device:        device,
-		Mode:          detectMigrationModeFromState(state),
+		Mode:          HookDetectMigrationModeFromState(state),
 		SourceState:   state,
 		SourcePath:    disk.Path,
 		TargetPath:    targetPath,
@@ -293,7 +293,7 @@ func listVMDiskMigrationCandidates(vmName string) ([]VMDiskMigrationDisk, error)
 			item.Format = info.Format
 		}
 
-		chain, err := qemuInfoChain(source)
+		chain, err := QemuInfoChain(source)
 		if err != nil {
 			item.CanMigrate = false
 			item.BlockReason = "读取硬盘镜像信息失败: " + err.Error()
@@ -306,7 +306,7 @@ func listVMDiskMigrationCandidates(vmName string) ([]VMDiskMigrationDisk, error)
 			result = append(result, item)
 			continue
 		}
-		item.Format = firstNonEmpty(item.Format, chain[0].Format)
+		item.Format = FirstNonEmpty(item.Format, chain[0].Format)
 		item.VirtualSize = chain[0].VirtualSize
 		item.ActualSize = chain[0].ActualSize
 		if item.ActualSize <= 0 {
@@ -321,7 +321,7 @@ func listVMDiskMigrationCandidates(vmName string) ([]VMDiskMigrationDisk, error)
 			item.UsedGB = bytesToGBString(item.ActualSize)
 		}
 		if len(chain) > 1 {
-			item.BackingPath = firstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
+			item.BackingPath = FirstNonEmpty(chain[0].FullBackingFilename, chain[0].BackingFilename, chain[1].Filename)
 		}
 		if strings.TrimSpace(item.Format) == "" {
 			item.CanMigrate = false
@@ -370,7 +370,7 @@ func executeLiveVMDiskMigration(ctx context.Context, plan *vmDiskMigrationPlan, 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("热迁移硬盘失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("热迁移硬盘失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 
 	progress(86, "正在同步持久化 XML...")
@@ -406,7 +406,7 @@ func prepareLiveShallowDiskTarget(ctx context.Context, plan *vmDiskMigrationPlan
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("创建热迁移目标硬盘失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("创建热迁移目标硬盘失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	_ = setLibvirtDiskFileOwner(plan.TargetPath)
 	return nil
@@ -477,7 +477,7 @@ func copyDiskFileSparse(ctx context.Context, sourcePath, targetPath string) erro
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return fmt.Errorf("复制硬盘文件失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("复制硬盘文件失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	return nil
 }
@@ -496,7 +496,7 @@ func rebaseDiskBackingUnsafe(plan *vmDiskMigrationPlan) error {
 		" " + utils.ShellSingleQuote(plan.TargetPath)
 	result := utils.ExecShellContextWithTimeout(context.Background(), cmd, 10*time.Minute)
 	if result.Error != nil {
-		return fmt.Errorf("修正 backing 路径失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
+		return fmt.Errorf("修正 backing 路径失败: %s", FirstNonEmpty(result.Stderr, result.Error.Error()))
 	}
 	return nil
 }
@@ -583,7 +583,7 @@ func buildUniqueDiskMigrationTargetPath(targetDir, sourcePath string, now time.T
 }
 
 func backingFormatForDisk(path string) string {
-	chain, err := qemuInfoChain(path)
+	chain, err := QemuInfoChain(path)
 	if err != nil || len(chain) < 2 {
 		return ""
 	}
@@ -602,7 +602,7 @@ func bytesToGBString(value int64) string {
 }
 
 func diskMigrationModeLabel(mode string) string {
-	if mode == MigrationModeLive {
+	if mode == HookMigrationModeLive {
 		return "热迁移"
 	}
 	return "冷迁移"

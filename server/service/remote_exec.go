@@ -46,7 +46,7 @@ func stripSSHWarnings(stderr string) string {
 	return strings.TrimSpace(strings.Join(filtered, "\n"))
 }
 
-func remoteSSHCommand(ctx context.Context, node model.HostNode, command string, timeout time.Duration) (string, error) {
+func RemoteSSHCommand(ctx context.Context, node model.HostNode, command string, timeout time.Duration) (string, error) {
 	return remoteSSHExec(ctx, node, command, timeout, false)
 }
 
@@ -73,20 +73,20 @@ func remoteSSHExec(ctx context.Context, node model.HostNode, command string, tim
 	if result.Error != nil {
 		if result.ExitCode == 255 {
 			cleanStderr := stripSSHWarnings(result.Stderr)
-			errMsg := firstNonEmpty(cleanStderr, result.Error.Error())
+			errMsg := FirstNonEmpty(cleanStderr, result.Error.Error())
 			return "", fmt.Errorf("SSH 连接失败: %s", errMsg)
 		}
 		if tolerateRemoteExit {
 			return result.Stdout, nil
 		}
 		cleanStderr := stripSSHWarnings(result.Stderr)
-		errMsg := firstNonEmpty(cleanStderr, result.Error.Error())
+		errMsg := FirstNonEmpty(cleanStderr, result.Error.Error())
 		return "", fmt.Errorf("%s", errMsg)
 	}
 	return result.Stdout, nil
 }
 
-func remoteRsyncFile(ctx context.Context, node model.HostNode, sourcePath, targetPath string, timeout time.Duration) error {
+func RemoteRsyncFile(ctx context.Context, node model.HostNode, sourcePath, targetPath string, timeout time.Duration) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -108,13 +108,13 @@ func remoteRsyncFile(ctx context.Context, node model.HostNode, sourcePath, targe
 	result := utils.ExecShellContextWithTimeout(ctx, cmd, timeout)
 	if result.Error != nil {
 		cleanStderr := stripSSHWarnings(result.Stderr)
-		errMsg := firstNonEmpty(cleanStderr, result.Error.Error())
+		errMsg := FirstNonEmpty(cleanStderr, result.Error.Error())
 		return fmt.Errorf("%s", errMsg)
 	}
 	return nil
 }
 
-func writeRemoteFile(ctx context.Context, node model.HostNode, content, targetPath string, timeout time.Duration) error {
+func WriteRemoteFile(ctx context.Context, node model.HostNode, content, targetPath string, timeout time.Duration) error {
 	tmp, err := os.CreateTemp("", "kvm-migration-*")
 	if err != nil {
 		return err
@@ -127,10 +127,10 @@ func writeRemoteFile(ctx context.Context, node model.HostNode, content, targetPa
 	}
 	_ = tmp.Close()
 	defer os.Remove(tmpPath)
-	return remoteRsyncFile(ctx, node, tmpPath, targetPath, timeout)
+	return RemoteRsyncFile(ctx, node, tmpPath, targetPath, timeout)
 }
 
-func ensureDefaultSSHKeyTrusted(ctx context.Context, node model.HostNode) error {
+func EnsureDefaultSSHKeyTrusted(ctx context.Context, node model.HostNode) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -144,7 +144,7 @@ func ensureDefaultSSHKeyTrusted(ctx context.Context, node model.HostNode) error 
 	}
 	install := fmt.Sprintf("mkdir -p /root/.ssh && chmod 700 /root/.ssh && grep -qxF %s /root/.ssh/authorized_keys 2>/dev/null || echo %s >> /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys",
 		utils.ShellSingleQuote(strings.TrimSpace(pub.Stdout)), utils.ShellSingleQuote(strings.TrimSpace(pub.Stdout)))
-	if _, err := remoteSSHCommand(ctx, node, install, 30*time.Second); err != nil {
+	if _, err := RemoteSSHCommand(ctx, node, install, 30*time.Second); err != nil {
 		return err
 	}
 	return nil
@@ -163,7 +163,7 @@ func writeSSHPasswordFile(node model.HostNode) (string, func(), error) {
 	return path, func() { _ = os.Remove(path) }, nil
 }
 
-func callNodeAPI(node model.HostNode, method, path string, body interface{}, out interface{}) ([]byte, error) {
+func CallNodeAPI(node model.HostNode, method, path string, body interface{}, out interface{}) ([]byte, error) {
 	apiKey, err := decryptHostNodeAPIKey(node)
 	if err != nil {
 		return nil, fmt.Errorf("解密目标面板 API Key 失败: %w", err)

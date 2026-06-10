@@ -66,3 +66,17 @@ func GetDiskSpace(path string) (total, used, available int64, err error) {
 
 	return total, used, available, nil
 }
+
+// GetFileCreateTime 获取文件的创建时间（从 stat 的 Ctim 字段获取，若为 0 则回退到 Mtim）
+// 返回 Unix 秒数，如果获取失败返回 0
+func GetFileCreateTime(path string) int64 {
+	var stat syscall.Stat_t
+	if err := syscall.Stat(path, &stat); err != nil {
+		return 0
+	}
+	ts := stat.Ctim.Sec
+	if ts <= 0 {
+		ts = stat.Mtim.Sec
+	}
+	return ts
+}

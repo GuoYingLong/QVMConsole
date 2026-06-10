@@ -7,6 +7,7 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	"kvm_console/service/vm/vmimport"
 	"kvm_console/taskqueue"
 )
 
@@ -514,7 +515,7 @@ func ImportDiskForVM(c *gin.Context) {
 		req.Bus = "virtio"
 	}
 
-	params := &service.ImportDiskForExistingVMParams{
+	params := &vmimport.ImportDiskForExistingVMParams{
 		VMName:         name,
 		DiskPath:       req.DiskPath,
 		DiskFile:       req.DiskFile,

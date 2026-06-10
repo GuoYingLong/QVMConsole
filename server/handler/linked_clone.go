@@ -7,6 +7,8 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	vm_memory "kvm_console/service/vm/memory"
+	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 )
 
@@ -26,8 +28,8 @@ type LinkedCloneVmRequest struct {
 	PAE                 *bool                           `json:"pae"`
 	RTCOffset           string                          `json:"rtc_offset"`
 	RTCStartDate        string                          `json:"rtc_startdate"`
-	GuestAgent          *service.VMGuestAgentConfig     `json:"guest_agent"`
-	SMBIOS1             *service.VMSMBIOS1Config        `json:"smbios1"`
+	GuestAgent          *vm_xml.VMGuestAgentConfig `json:"guest_agent"`
+	SMBIOS1             *vm_xml.VMSMBIOS1Config    `json:"smbios1"`
 	BootType            string                          `json:"boot_type"`
 	DiskBus             string                          `json:"disk_bus"`
 	VideoModel          string                          `json:"video_model"`
@@ -35,7 +37,7 @@ type LinkedCloneVmRequest struct {
 	CPULimitPercent     int                             `json:"cpu_limit_percent"`
 	CPUAffinity         string                          `json:"cpu_affinity"`         // CPU 亲和性，如 "0,2,4"
 	FirstBootRebootMode string                          `json:"first_boot_reboot_mode"`
-	MemoryDynamic       *service.VMMemoryDynamicRequest `json:"memory_dynamic"`
+	MemoryDynamic       *vm_memory.VMMemoryDynamicRequest `json:"memory_dynamic"`
 	SwitchID            uint                            `json:"switch_id"`
 	SecurityGroupID     uint                            `json:"security_group_id"`
 	ExtraNics           []service.AddVMInterfaceRequest `json:"extra_nics"`

@@ -37,5 +37,5 @@ func ValidateVMNamePrefix(prefix string) error {
 
 // GenerateRandomVMName 生成默认虚拟机名称。
 func GenerateRandomVMName() string {
-	return "vm" + randomStringFromCharset("abcdefghijklmnopqrstuvwxyz0123456789", 8)
+	return "vm" + RandomStringFromCharset("abcdefghijklmnopqrstuvwxyz0123456789", 8)
 }
