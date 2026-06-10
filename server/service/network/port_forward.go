@@ -89,7 +89,7 @@ func ListLivePortForwardsFromIPTables() ([]PortForwardRule, error) {
 }
 
 func listLivePortForwardsFromIPTables() ([]PortForwardRule, error) {
-	result := utils.ExecShell("iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null | grep DNAT")
+	result := utils.ExecShellQuiet("iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null | grep DNAT")
 	if result.Error != nil || result.Stdout == "" {
 		return []PortForwardRule{}, nil
 	}
@@ -281,7 +281,7 @@ func iptablesArgValue(args []string, key string) string {
 
 // RemoveVPCPortForwardAcceptRules 移除所有指向 VPC 管理的 IP 的 FORWARD ACCEPT 规则
 func RemoveVPCPortForwardAcceptRules() {
-	result := utils.ExecShell("iptables -S FORWARD 2>/dev/null | grep -- '-j ACCEPT' | grep -- '-d ' | grep -- '--dport '")
+	result := utils.ExecShellQuiet("iptables -S FORWARD 2>/dev/null | grep -- '-j ACCEPT' | grep -- '-d ' | grep -- '--dport '")
 	if result.Error != nil || strings.TrimSpace(result.Stdout) == "" {
 		return
 	}

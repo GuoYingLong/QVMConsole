@@ -66,7 +66,7 @@ func ExitMaintenanceMode(ctx context.Context, params *MaintenanceModeTaskParams,
 }
 
 func stopAllRunningVMsForMaintenance(ctx context.Context, timeout time.Duration) ([]string, []string, error) {
-	result := utils.ExecShell("virsh list --name --state-running 2>/dev/null | grep -v '^$'")
+	result := utils.ExecShellQuiet("virsh list --name --state-running 2>/dev/null | grep -v '^$'")
 	if result.Error != nil || strings.TrimSpace(result.Stdout) == "" {
 		return nil, nil, nil
 	}

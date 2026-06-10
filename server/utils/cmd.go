@@ -132,6 +132,101 @@ func ExecShellContextWithTimeout(ctx context.Context, command string, timeout ti
 	return ExecCommandContextWithTimeout(ctx, "bash", timeout, "-c", command)
 }
 
+// ── Quiet 变体：非零退出码仅记录 DEBUG 日志（适用于预期可能失败的查询/清理命令）──
+
+// ExecCommandQuiet 与 ExecCommand 相同，但非零退出码仅记录 DEBUG
+func ExecCommandQuiet(name string, args ...string) *CmdResult {
+	return execCommandWithLogLevel(name, logger.CMD.Debug, 30*time.Second, args...)
+}
+
+// ExecCommandQuietWithTimeout 与 ExecCommandWithTimeout 相同，但非零退出码仅记录 DEBUG
+func ExecCommandQuietWithTimeout(name string, timeout time.Duration, args ...string) *CmdResult {
+	return execCommandWithLogLevel(name, logger.CMD.Debug, timeout, args...)
+}
+
+// ExecShellQuiet 与 ExecShell 相同，但非零退出码仅记录 DEBUG
+func ExecShellQuiet(command string) *CmdResult {
+	return ExecCommandQuiet("bash", "-c", command)
+}
+
+// execCommandWithLogLevel 执行命令，使用指定日志级别记录非零退出码
+func execCommandWithLogLevel(name string, logFn func(string, ...any), timeout time.Duration, args ...string) *CmdResult {
+	cmd := exec.Command(name, args...)
+	cmd.Env = append(os.Environ(), "LANG=C", "LC_ALL=C")
+	prepareProcessGroup(cmd)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	argsStr := strings.Join(args, " ")
+	logger.CMD.Info("执行命令", "cmd", name, "args", argsStr)
+
+	start := time.Now()
+
+	if err := cmd.Start(); err != nil {
+		logFn("命令启动失败", "cmd", name, "args", argsStr, "error", err)
+		return &CmdResult{
+			Stderr:   err.Error(),
+			ExitCode: -1,
+			Error:    fmt.Errorf("启动命令失败: %w", err),
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+
+	ctx := context.Background()
+	select {
+	case err := <-done:
+		elapsed := time.Since(start)
+		result := &CmdResult{
+			Stdout: strings.TrimSpace(stdout.String()),
+			Stderr: strings.TrimSpace(stderr.String()),
+		}
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				result.ExitCode = exitErr.ExitCode()
+			} else {
+				result.ExitCode = -1
+			}
+			result.Error = fmt.Errorf("命令执行失败: %w, stderr: %s", err, result.Stderr)
+			// 使用调用方指定的日志级别（DEBUG 而非 ERROR）
+			logFn("命令执行失败", "cmd", name, "args", argsStr, "exit_code", result.ExitCode, "error", result.Error, "stderr", truncate(result.Stderr, 500), "duration", elapsed.String())
+		} else {
+			logger.CMD.Info("命令执行完成", "cmd", name, "args", argsStr, "exit_code", result.ExitCode, "duration", elapsed.String())
+		}
+		return result
+
+	case <-time.After(timeout):
+		killProcessTree(cmd)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+		logFn("命令执行超时", "cmd", name, "args", argsStr, "timeout", timeout.String())
+		return &CmdResult{
+			Stderr:   "命令执行超时",
+			ExitCode: -1,
+			Error:    fmt.Errorf("命令执行超时: %s %s", name, strings.Join(args, " ")),
+		}
+
+	case <-ctx.Done():
+		killProcessTree(cmd)
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+		}
+		logFn("命令已取消", "cmd", name, "args", argsStr, "reason", ctx.Err())
+		return &CmdResult{
+			Stderr:   "命令已取消",
+			ExitCode: -1,
+			Error:    fmt.Errorf("命令已取消: %s %s: %w", name, strings.Join(args, " "), ctx.Err()),
+		}
+	}
+}
+
 // ShellSingleQuote 对 shell 参数做单引号转义，防止命令注入。
 // 将单引号替换为 '"'"'（结束引号、转义单引号、开始引号），
 // 使参数在 shell 单引号上下文中安全使用。

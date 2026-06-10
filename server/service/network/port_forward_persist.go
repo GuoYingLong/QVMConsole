@@ -131,7 +131,7 @@ func SavePortForwardRules() error {
 
 	// DNAT 规则
 	script += "# === DNAT 转发规则 ===\n"
-	dnatResult := utils.ExecShell("iptables -t nat -S PREROUTING 2>/dev/null | grep DNAT")
+	dnatResult := utils.ExecShellQuiet("iptables -t nat -S PREROUTING 2>/dev/null | grep DNAT")
 	if dnatResult.Stdout != "" {
 		for _, line := range strings.Split(dnatResult.Stdout, "\n") {
 			line = strings.TrimSpace(line)
@@ -143,7 +143,7 @@ func SavePortForwardRules() error {
 
 	// FORWARD 规则
 	script += "\n# === FORWARD 放行规则 ===\n"
-	fwdResult := utils.ExecShell("iptables -S FORWARD 2>/dev/null | grep -- '-j ACCEPT' | grep -- '-d ' | grep -- '--dport '")
+	fwdResult := utils.ExecShellQuiet("iptables -S FORWARD 2>/dev/null | grep -- '-j ACCEPT' | grep -- '-d ' | grep -- '--dport '")
 	if fwdResult.Stdout != "" {
 		for _, line := range strings.Split(fwdResult.Stdout, "\n") {
 			line = strings.TrimSpace(line)

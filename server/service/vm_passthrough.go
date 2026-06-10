@@ -11,23 +11,23 @@ import (
 
 // PCIDevice 直通 PCI 设备信息
 type PCIDevice struct {
-	PCIAddress     string   `json:"pci_address"`      // 0000:04:00.0 格式
-	Domain         string   `json:"domain"`            // PCI 域
-	Bus            string   `json:"bus"`               // PCI 总线
-	Slot           string   `json:"slot"`              // PCI 插槽
-	Function       string   `json:"function"`          // PCI 功能
-	VendorID       string   `json:"vendor_id"`         // 厂商 ID
-	VendorName     string   `json:"vendor_name"`       // 厂商名称
-	ProductID      string   `json:"product_id"`        // 产品 ID
-	ProductName    string   `json:"product_name"`       // 产品名称
-	ClassName      string   `json:"class_name"`        // 设备类别
-	IOMMUGroup     int      `json:"iommu_group"`       // IOMMU 组号
-	DriverInUse    string   `json:"driver_in_use"`     // 当前驱动
-	IsVfioBound    bool     `json:"is_vfio_bound"`     // 是否已绑定 vfio-pci
-	IsUsedByVM     bool     `json:"is_used_by_vm"`     // 是否已被虚拟机使用
-	UsedByVMName   string   `json:"used_by_vm_name"`   // 使用该设备的虚拟机名
-	IsPassthroughCapable bool `json:"is_passthrough_capable"` // 是否可直通
-	CapabilityNote string   `json:"capability_note"`   // 不可直通原因
+	PCIAddress           string `json:"pci_address"`            // 0000:04:00.0 格式
+	Domain               string `json:"domain"`                 // PCI 域
+	Bus                  string `json:"bus"`                    // PCI 总线
+	Slot                 string `json:"slot"`                   // PCI 插槽
+	Function             string `json:"function"`               // PCI 功能
+	VendorID             string `json:"vendor_id"`              // 厂商 ID
+	VendorName           string `json:"vendor_name"`            // 厂商名称
+	ProductID            string `json:"product_id"`             // 产品 ID
+	ProductName          string `json:"product_name"`           // 产品名称
+	ClassName            string `json:"class_name"`             // 设备类别
+	IOMMUGroup           int    `json:"iommu_group"`            // IOMMU 组号
+	DriverInUse          string `json:"driver_in_use"`          // 当前驱动
+	IsVfioBound          bool   `json:"is_vfio_bound"`          // 是否已绑定 vfio-pci
+	IsUsedByVM           bool   `json:"is_used_by_vm"`          // 是否已被虚拟机使用
+	UsedByVMName         string `json:"used_by_vm_name"`        // 使用该设备的虚拟机名
+	IsPassthroughCapable bool   `json:"is_passthrough_capable"` // 是否可直通
+	CapabilityNote       string `json:"capability_note"`        // 不可直通原因
 }
 
 // HostDeviceParam 直通设备参数（创建/编辑用）
@@ -354,7 +354,7 @@ func ValidatePCIPassthrough(pciAddress string) error {
 	}
 
 	// 检查 vfio-pci 驱动
-	vfioCheck := utils.ExecShell("lsmod | grep -q vfio_pci && echo ok || echo fail")
+	vfioCheck := utils.ExecShellQuiet("lsmod | grep -q vfio_pci && echo ok || echo fail")
 	if strings.TrimSpace(vfioCheck.Stdout) != "ok" {
 		return fmt.Errorf("vfio-pci 内核模块未加载，请执行 modprobe vfio-pci")
 	}
@@ -626,8 +626,8 @@ func isPCIDevicePassthroughCapable(dev PCIDevice) bool {
 	// 排除系统关键驱动
 	criticalDrivers := []string{
 		"megaraid_sas", "ahci", "nvme", "xhci_hcd", "ehci-pci",
-		"vmwgfx",       // VMware 虚拟显卡（解除绑定会导致系统崩溃）
-		"nvidia",       // 物理 NVIDIA 驱动（需要先卸载后再绑定到 vfio-pci）
+		"vmwgfx", // VMware 虚拟显卡（解除绑定会导致系统崩溃）
+		"nvidia", // 物理 NVIDIA 驱动（需要先卸载后再绑定到 vfio-pci）
 	}
 	for _, drv := range criticalDrivers {
 		if strings.ToLower(dev.DriverInUse) == drv {
@@ -751,7 +751,7 @@ func ApplyHostDevsToDomainXML(xmlContent string, hostDevs []HostDeviceParam) (st
 
 // EnsureVfioModuleLoaded 确保 vfio-pci 模块已加载
 func EnsureVfioModuleLoaded() error {
-	checkResult := utils.ExecShell("lsmod | grep -q vfio_pci && echo ok || echo fail")
+	checkResult := utils.ExecShellQuiet("lsmod | grep -q vfio_pci && echo ok || echo fail")
 	if strings.TrimSpace(checkResult.Stdout) == "ok" {
 		return nil
 	}

@@ -149,7 +149,7 @@ func DetectSSHPorts() []int {
 		}
 	}
 	if len(ports) == 0 {
-		result = utils.ExecShell(`ss -tlnp 2>/dev/null | grep -E 'sshd|/ssh' | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un`)
+		result = utils.ExecShellQuiet(`ss -tlnp 2>/dev/null | grep -E 'sshd|/ssh' | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un`)
 		for _, line := range strings.Split(result.Stdout, "\n") {
 			if port, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && port > 0 && port <= 65535 {
 				ports[port] = true
@@ -167,7 +167,7 @@ func DetectPanelPorts() []int {
 	if config.GlobalConfig != nil && config.GlobalConfig.Port > 0 {
 		ports[config.GlobalConfig.Port] = true
 	}
-	result := utils.ExecShell(`ss -tlnp 2>/dev/null | grep -E 'kvm-console|server' | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un`)
+	result := utils.ExecShellQuiet(`ss -tlnp 2>/dev/null | grep -E 'kvm-console|server' | awk '{print $4}' | grep -oE '[0-9]+$' | sort -un`)
 	for _, line := range strings.Split(result.Stdout, "\n") {
 		if port, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && port > 0 && port <= 65535 {
 			ports[port] = true

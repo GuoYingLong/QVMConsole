@@ -93,7 +93,7 @@ func getOccupiedPorts() map[int]bool {
 	usedPorts := make(map[int]bool)
 
 	// TCP 监听端口
-	tcpResult := utils.ExecShell(`ss -tlnH 2>/dev/null | awk '{print $4}' | grep -oP '\d+$' | sort -un`)
+	tcpResult := utils.ExecShellQuiet(`ss -tlnH 2>/dev/null | awk '{print $4}' | grep -oP '\d+$' | sort -un`)
 	for _, line := range strings.Split(tcpResult.Stdout, "\n") {
 		if p := strings.TrimSpace(line); p != "" {
 			var port int
@@ -103,7 +103,7 @@ func getOccupiedPorts() map[int]bool {
 	}
 
 	// UDP 监听端口
-	udpResult := utils.ExecShell(`ss -ulnH 2>/dev/null | awk '{print $4}' | grep -oP '\d+$' | sort -un`)
+	udpResult := utils.ExecShellQuiet(`ss -ulnH 2>/dev/null | awk '{print $4}' | grep -oP '\d+$' | sort -un`)
 	for _, line := range strings.Split(udpResult.Stdout, "\n") {
 		if p := strings.TrimSpace(line); p != "" {
 			var port int
@@ -113,7 +113,7 @@ func getOccupiedPorts() map[int]bool {
 	}
 
 	// iptables DNAT 已用端口
-	iptResult := utils.ExecShell(`iptables -t nat -L PREROUTING -n 2>/dev/null | grep DNAT | grep -oP 'dpts?:\K\S+'`)
+	iptResult := utils.ExecShellQuiet(`iptables -t nat -L PREROUTING -n 2>/dev/null | grep DNAT | grep -oP 'dpts?:\K\S+'`)
 	for _, line := range strings.Split(iptResult.Stdout, "\n") {
 		if p := strings.TrimSpace(line); p != "" {
 			var port int

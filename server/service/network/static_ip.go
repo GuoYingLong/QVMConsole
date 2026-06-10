@@ -522,7 +522,7 @@ func UnbindStaticIP(vmName string) error {
 // RemovePortForwardsForIP 删除所有指向指定 IP 的端口转发规则
 func RemovePortForwardsForIP(targetIP string) {
 	// 获取所有 DNAT 规则及行号
-	result := utils.ExecShell("iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null | grep DNAT")
+	result := utils.ExecShellQuiet("iptables -t nat -L PREROUTING -n --line-numbers 2>/dev/null | grep DNAT")
 	if result.Error != nil || result.Stdout == "" {
 		return
 	}

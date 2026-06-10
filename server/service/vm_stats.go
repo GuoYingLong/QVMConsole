@@ -193,7 +193,7 @@ func GetHostStats() (*HostStats, error) {
 	stats.CPUCount = runtime.NumCPU()
 
 	// CPU 使用率
-	cpuUsageResult := utils.ExecShell(`top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1`)
+	cpuUsageResult := utils.ExecShellQuiet(`top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1`)
 	if cpuUsageResult.Error == nil {
 		stats.CPUPercent, _ = strconv.ParseFloat(strings.TrimSpace(cpuUsageResult.Stdout), 64)
 	}
@@ -274,11 +274,11 @@ func GetHostStats() (*HostStats, error) {
 	}
 
 	// 虚拟机数量
-	runningResult := utils.ExecShell(`virsh list --name 2>/dev/null | grep -v '^$' | wc -l`)
+	runningResult := utils.ExecShellQuiet(`virsh list --name 2>/dev/null | grep -v '^$' | wc -l`)
 	if runningResult.Error == nil {
 		stats.VMRunning, _ = strconv.Atoi(strings.TrimSpace(runningResult.Stdout))
 	}
-	totalResult := utils.ExecShell(`virsh list --all --name 2>/dev/null | grep -v '^$' | wc -l`)
+	totalResult := utils.ExecShellQuiet(`virsh list --all --name 2>/dev/null | grep -v '^$' | wc -l`)
 	if totalResult.Error == nil {
 		stats.VMTotal, _ = strconv.Atoi(strings.TrimSpace(totalResult.Stdout))
 	}

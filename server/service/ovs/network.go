@@ -149,7 +149,7 @@ func EnsureOVSNetworkReady() error {
 	if result := utils.ExecCommand("ip", "link", "set", bridge, "up"); result.Error != nil {
 		return fmt.Errorf("启动 OVS 网桥失败: %s", result.Stderr)
 	}
-	addrResult := utils.ExecShell(fmt.Sprintf("ip -4 addr show dev %s | grep -q '%s/24'", utils.ShellSingleQuote(bridge), OvsGatewayIP()))
+	addrResult := utils.ExecShellQuiet(fmt.Sprintf("ip -4 addr show dev %s | grep -q '%s/24'", utils.ShellSingleQuote(bridge), OvsGatewayIP()))
 	if addrResult.Error != nil {
 		utils.ExecCommand("ip", "addr", "flush", "dev", bridge)
 		if result := utils.ExecCommand("ip", "addr", "add", OvsGatewayIP()+"/24", "dev", bridge); result.Error != nil {
@@ -259,11 +259,12 @@ func IsSystemdUnitActive(unit string) bool {
 }
 
 // IsSystemdUnitFailed returns true if the given systemd unit is in failed state.
+// systemctl is-failed: exit 0 = unit is failed, exit 1 = unit is not failed (normal).
 func IsSystemdUnitFailed(unit string) bool {
 	if strings.TrimSpace(unit) == "" {
 		return false
 	}
-	return utils.ExecCommand("systemctl", "is-failed", "--quiet", unit).Error == nil
+	return utils.ExecCommandQuiet("systemctl", "is-failed", "--quiet", unit).ExitCode == 0
 }
 
 // LogNetworkRuntimeChange logs a network runtime change message.

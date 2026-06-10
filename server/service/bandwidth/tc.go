@@ -17,7 +17,7 @@ func clearTCBandwidthLimit(vnetIF string) {
 	if vnetIF == "" {
 		return
 	}
-	utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
+	utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
 	clearTCUploadLimit(vnetIF)
 }
 
@@ -26,7 +26,7 @@ func ApplyTCVPCSwitchDownlinkLimit(gwPort string, downMbps int) {
 	if gwPort == "" {
 		return
 	}
-	utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(gwPort)))
+	utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(gwPort)))
 	if downMbps <= 0 {
 		return
 	}
@@ -54,7 +54,7 @@ func ClearTCVPCSwitchDownlinkLimit(gwPort string) {
 	if gwPort == "" {
 		return
 	}
-	utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(gwPort)))
+	utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(gwPort)))
 }
 
 // applyTCDownloadLimit 使用 tc 命令在 vnet 接口的 egress 方向设置下行限速
@@ -68,7 +68,7 @@ func applyTCDownloadLimit(vnetIF string, avgKBps, peakKBps, burstKB int) {
 	}
 
 	// 先清除已有的 tc qdisc
-	utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
+	utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
 
 	if avgKBps <= 0 {
 		return // 不限制，清除即可
@@ -100,9 +100,9 @@ func clearTCUploadLimit(vnetIF string) {
 		return
 	}
 	ifbIF := TcUploadIFBName(vnetIF)
-	utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s ingress 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
+	utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s ingress 2>/dev/null", utils.ShellSingleQuote(vnetIF)))
 	if ifbIF != "" {
-		utils.ExecShell(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(ifbIF)))
+		utils.ExecShellQuiet(fmt.Sprintf("tc qdisc del dev %s root 2>/dev/null", utils.ShellSingleQuote(ifbIF)))
 		utils.ExecShell(fmt.Sprintf("ip link set %s down 2>/dev/null || true", utils.ShellSingleQuote(ifbIF)))
 		utils.ExecShell(fmt.Sprintf("ip link del %s 2>/dev/null || true", utils.ShellSingleQuote(ifbIF)))
 	}

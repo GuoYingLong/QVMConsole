@@ -166,8 +166,8 @@ func GetVM(name string) (*VmDetail, error) {
 	}
 	vm.Locked = IsVMLocked(name)
 	if HookApplyVMUnderMigrationStatus != nil {
-			HookApplyVMUnderMigrationStatus(&vm.VmInfo)
-		}
+		HookApplyVMUnderMigrationStatus(&vm.VmInfo)
+	}
 
 	return vm, nil
 }
@@ -243,7 +243,7 @@ func getVMDiskInfo(name string) diskInfoResult {
 
 	// 获取 backing file（模板来源）
 	if info.template == "" {
-		backingResult := utils.ExecShell(fmt.Sprintf("qemu-img info -U %s 2>/dev/null | grep 'backing file:' | awk '{print $3}'", utils.ShellSingleQuote(info.path)))
+		backingResult := utils.ExecShellQuiet(fmt.Sprintf("qemu-img info -U %s 2>/dev/null | grep 'backing file:' | awk '{print $3}'", utils.ShellSingleQuote(info.path)))
 		if backingResult.Error == nil {
 			backing := strings.TrimSpace(backingResult.Stdout)
 			if backing != "" {

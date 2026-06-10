@@ -42,7 +42,7 @@ func EnsureVPCSwitchRuntime(sw model.VPCSwitch) error {
 		return fmt.Errorf("创建 VPC 网关端口失败: %s", result.Stderr)
 	}
 	utils.ExecCommand("ip", "link", "set", port, "up")
-	utils.ExecShell(fmt.Sprintf("ip -4 addr show dev %s | grep -q '%s/24' || ip addr add %s/24 dev %s",
+	utils.ExecShellQuiet(fmt.Sprintf("ip -4 addr show dev %s | grep -q '%s/24' || ip addr add %s/24 dev %s",
 		utils.ShellSingleQuote(port), utils.ShellSingleQuote(sw.GatewayIP), utils.ShellSingleQuote(sw.GatewayIP), utils.ShellSingleQuote(port)))
 	if err := HookEnsureLocalDNSMasqInput(port); err != nil {
 		return err
@@ -218,7 +218,7 @@ func ensureVPCDNSMasq(id uint, configChanged bool) {
 
 func isVPCDNSMasqRunning(id uint) bool {
 	pidPath := vpcDNSMasqPIDPath(id)
-	result := utils.ExecShell(fmt.Sprintf("[ -f %s ] && ps -p $(cat %s) -o comm= | grep -q '^dnsmasq$'",
+	result := utils.ExecShellQuiet(fmt.Sprintf("[ -f %s ] && ps -p $(cat %s) -o comm= | grep -q '^dnsmasq$'",
 		utils.ShellSingleQuote(pidPath), utils.ShellSingleQuote(pidPath)))
 	return result.Error == nil
 }
