@@ -925,9 +925,8 @@ func getHostMemoryPressure() hostMemoryPressure {
 		return hostMemoryPressure{}
 	}
 	availableKB := stats.MemFree
-	meminfo := utils.ExecShell(`awk '/MemAvailable:/ {print $2}' /proc/meminfo`)
-	if meminfo.Error == nil {
-		if v, err := strconv.ParseInt(strings.TrimSpace(meminfo.Stdout), 10, 64); err == nil && v > 0 {
+	if memInfo, err := utils.ReadMemInfo(); err == nil {
+		if v, ok := memInfo["MemAvailable"]; ok && v > 0 {
 			availableKB = v
 		}
 	}

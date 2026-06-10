@@ -311,44 +311,44 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 
 	if isFnOS {
 		if err := prepareFnOSSystemDiskExpansion(ctx, cloneDisk, progressFn); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		if err := cloneFnOS(params, cloneDisk, progressFn); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 	}
 	if tplType == "linux" {
 		progressFn(25, "重置 Linux 首次启动身份...")
 		if err := prepareLinuxCloneFirstBootIdentity(params, cloneDisk); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		params.LinuxIdentityPrepared = true
 	}
 	if isWindows {
 		if err := prepareWindowsSystemDiskExpansion(ctx, cloneDisk, progressFn); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 	}
 
 	progressFn(30, "创建虚拟机定义...")
 	if err := EnsureOVSNetworkReady(); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+		_ = os.Remove(cloneDisk)
 		return nil, err
 	}
 
 	memoryMeta, ramMB, _, err := BuildVMMemoryMetadataForCreate(params.RAM, params.MemoryDynamic)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+		_ = os.Remove(cloneDisk)
 		return nil, err
 	}
 
 	// 克隆前检查宿主机可用内存
 	if err := CheckHostMemory(ramMB); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+		_ = os.Remove(cloneDisk)
 		return nil, err
 	}
 
@@ -376,7 +376,7 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 	if isWindows {
 		// ===== Windows 克隆 =====
 		if err := cloneWindows(ctx, params, cloneDisk, ramMB, memoryMeta, needUEFI, progressFn); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 	} else {
@@ -403,7 +403,7 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 		)
 		result := utils.ExecCommandLongRunning("bash", "-c", installCmd)
 		if result.Error != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, fmt.Errorf("生成虚拟机 XML 失败: %s", result.Stderr)
 		}
 
@@ -420,33 +420,33 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 		if memoryMeta != nil {
 			vmXML, err = ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, !isOther)
 			if err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+				_ = os.Remove(cloneDisk)
 				return nil, err
 			}
 		}
 		vmXML, err = ApplyRTCConfigToDomainXML(vmXML, params.RTCOffset, params.RTCStartDate, tplType)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		vmXML, err = ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		vmXML, err = ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		vmXML, err = ApplyVMAPICToDomainXML(vmXML, params.APIC)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		vmXML, err = ApplyVMPAEToDomainXML(vmXML, params.PAE)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		vmXML = ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, tplType)
@@ -457,42 +457,42 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 			var affErr error
 			vmXML, affErr = ApplyCPUAffinityIfSet(vmXML, topoVCPU, params.CPUAffinity)
 			if affErr != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+				_ = os.Remove(cloneDisk)
 				return nil, affErr
 			}
 		}
 		if cloneBootType != "" {
 			vmXML, err = ApplyVMBootTypeToDomainXML(params.Name, vmXML, cloneBootType)
 			if err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+				_ = os.Remove(cloneDisk)
 				return nil, err
 			}
 		}
 		vmXML, err = ApplyVPCSwitchToDomainXML(vmXML, params.SwitchID)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 		if needUEFI {
 			vmXML, err = prepareUEFITemplateNVRAMForClone(vmXML, params.Name, meta.NVRAMPath)
 			if err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+				_ = os.Remove(cloneDisk)
 				return nil, err
 			}
 		}
 		if err := ensureVMUEFINVRAMFile(params.Name, vmXML, cloneBootType); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 
 		// 定义虚拟机（直接通过 RPC，无需临时文件）
 		if _, err := defineDomainXMLRPC(vmXML); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, fmt.Errorf("定义虚拟机失败: %w", err)
 		}
 		if memoryMeta != nil {
 			if err := writeVMMemoryMetadata(params.Name, memoryMeta); err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+				_ = os.Remove(cloneDisk)
 				return nil, err
 			}
 		}
@@ -508,7 +508,7 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 		}
 
 		if err := StartVM(params.Name); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cloneDisk)))
+			_ = os.Remove(cloneDisk)
 			return nil, err
 		}
 	}
@@ -2173,9 +2173,8 @@ func DeleteVMWithDisks(name string, deleteDisks []string, transferDisks []string
 				nameOnly := strings.TrimSuffix(filename, ext)
 				destPath = filepath.Join(diskDir, fmt.Sprintf("%s_%s%s", nameOnly, ts, ext))
 			}
-			mvResult := utils.ExecShell(fmt.Sprintf("mv %s %s", utils.ShellSingleQuote(diskPath), utils.ShellSingleQuote(destPath)))
-			if mvResult.Error != nil {
-				logger.App.Warn("转移磁盘到用户存储失败", "path", diskPath, "stderr", mvResult.Stderr)
+			if err := os.Rename(diskPath, destPath); err != nil {
+				logger.App.Warn("转移磁盘到用户存储失败", "path", diskPath, "error", err)
 			} else {
 				utils.ExecCommand("chown", "libvirt-qemu:kvm", destPath)
 			}

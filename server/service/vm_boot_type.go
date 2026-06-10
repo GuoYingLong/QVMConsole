@@ -342,14 +342,11 @@ func createQCOW2NVRAMFromTemplate(templatePath, nvramPath string) error {
 	if result.Error != nil {
 		return fmt.Errorf("转换 NVRAM 为 qcow2 失败: %s", firstNonEmpty(result.Stderr, result.Error.Error()))
 	}
-	fixResult := utils.ExecShell(fmt.Sprintf(
-		"chmod 600 %s && (chown libvirt-qemu:kvm %s 2>/dev/null || chown qemu:qemu %s 2>/dev/null || true)",
-		utils.ShellSingleQuote(nvramPath),
-		utils.ShellSingleQuote(nvramPath),
-		utils.ShellSingleQuote(nvramPath),
-	))
-	if fixResult.Error != nil {
-		return fmt.Errorf("设置 NVRAM 文件权限失败: %s", firstNonEmpty(fixResult.Stderr, fixResult.Error.Error()))
+	if err := os.Chmod(nvramPath, 0600); err != nil {
+		return fmt.Errorf("设置 NVRAM 文件权限失败: %w", err)
+	}
+	if err := utils.ChownLibvirtQEMU(nvramPath); err != nil {
+		return fmt.Errorf("设置 NVRAM 文件权限失败: %w", err)
 	}
 	return nil
 }
@@ -384,14 +381,11 @@ func convertExistingNVRAMToQCOW2(nvramPath string) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("替换 NVRAM 文件失败: %w", err)
 	}
-	fixResult := utils.ExecShell(fmt.Sprintf(
-		"chmod 600 %s && (chown libvirt-qemu:kvm %s 2>/dev/null || chown qemu:qemu %s 2>/dev/null || true)",
-		utils.ShellSingleQuote(nvramPath),
-		utils.ShellSingleQuote(nvramPath),
-		utils.ShellSingleQuote(nvramPath),
-	))
-	if fixResult.Error != nil {
-		return fmt.Errorf("设置 NVRAM 文件权限失败: %s", firstNonEmpty(fixResult.Stderr, fixResult.Error.Error()))
+	if err := os.Chmod(nvramPath, 0600); err != nil {
+		return fmt.Errorf("设置 NVRAM 文件权限失败: %w", err)
+	}
+	if err := utils.ChownLibvirtQEMU(nvramPath); err != nil {
+		return fmt.Errorf("设置 NVRAM 文件权限失败: %w", err)
 	}
 	return nil
 }

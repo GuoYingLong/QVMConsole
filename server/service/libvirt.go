@@ -4,10 +4,13 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/digitalocean/go-libvirt"
@@ -253,24 +256,23 @@ func ListVMs(options ...VMListOptions) ([]VmInfo, error) {
 
 	// 提前批量获取所有虚拟机的创建时间
 	statMap := make(map[string]string)
-	bulkStatResult := utils.ExecShell("stat -c '%n|%W|%Y' /etc/libvirt/qemu/*.xml 2>/dev/null")
-	if bulkStatResult.Error == nil {
-		lines := strings.Split(bulkStatResult.Stdout, "\n")
-		for _, line := range lines {
-			parts := strings.Split(strings.TrimSpace(line), "|")
-			if len(parts) >= 3 {
-				pathParts := strings.Split(parts[0], "/")
-				fileName := pathParts[len(pathParts)-1]
-				vmName := strings.TrimSuffix(fileName, ".xml")
-				w, _ := strconv.ParseInt(parts[1], 10, 64)
-				y, _ := strconv.ParseInt(parts[2], 10, 64)
-				ts := w
-				if ts <= 0 {
-					ts = y
-				}
-				if ts > 0 {
-					statMap[vmName] = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
-				}
+	xmlFiles, err := filepath.Glob("/etc/libvirt/qemu/*.xml")
+	if err == nil {
+		for _, xmlPath := range xmlFiles {
+			info, err := os.Stat(xmlPath)
+			if err != nil {
+				continue
+			}
+			stat := info.Sys().(*syscall.Stat_t)
+			pathParts := strings.Split(xmlPath, "/")
+			fileName := pathParts[len(pathParts)-1]
+			vmName := strings.TrimSuffix(fileName, ".xml")
+			ts := stat.Ctim.Sec
+			if ts <= 0 {
+				ts = stat.Mtim.Sec
+			}
+			if ts > 0 {
+				statMap[vmName] = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 			}
 		}
 	}
@@ -427,19 +429,14 @@ func GetVM(name string) (*VmDetail, error) {
 
 	// 创建时间
 	xmlPath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
-	statRes := utils.ExecShell(fmt.Sprintf("stat -c %%W|%%Y %s 2>/dev/null", utils.ShellSingleQuote(xmlPath)))
-	if statRes.Error == nil {
-		parts := strings.Split(strings.TrimSpace(statRes.Stdout), "|")
-		if len(parts) >= 2 {
-			w, _ := strconv.ParseInt(parts[0], 10, 64)
-			y, _ := strconv.ParseInt(parts[1], 10, 64)
-			ts := w
-			if ts <= 0 {
-				ts = y
-			}
-			if ts > 0 {
-				vm.CreatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
-			}
+	if info, err := os.Stat(xmlPath); err == nil {
+		stat := info.Sys().(*syscall.Stat_t)
+		ts := stat.Ctim.Sec
+		if ts <= 0 {
+			ts = stat.Mtim.Sec
+		}
+		if ts > 0 {
+			vm.CreatedAt = time.Unix(ts, 0).Format("2006-01-02 15:04:05")
 		}
 	}
 
@@ -901,13 +898,19 @@ func ResetVM(name string) error {
 func FixOnReboot(name string) {
 	xmlPath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
 	// 检查是否需要修复
-	checkResult := utils.ExecShell(fmt.Sprintf("grep '<on_reboot>destroy</on_reboot>' %s 2>/dev/null", utils.ShellSingleQuote(xmlPath)))
-	if checkResult.Error != nil || strings.TrimSpace(checkResult.Stdout) == "" {
+	content, err := os.ReadFile(xmlPath)
+	if err != nil {
+		return // 文件不存在或无法读取，不需要修复
+	}
+	if !strings.Contains(string(content), "<on_reboot>destroy</on_reboot>") {
 		return // 不需要修复
 	}
-	// 直接 sed 修改 XML 文件
-	utils.ExecShell(fmt.Sprintf(
-		"sed -i 's|<on_reboot>destroy</on_reboot>|<on_reboot>restart</on_reboot>|' %s", utils.ShellSingleQuote(xmlPath)))
+	// 直接替换 XML 文件内容
+	newContent := strings.Replace(string(content), "<on_reboot>destroy</on_reboot>", "<on_reboot>restart</on_reboot>", 1)
+	if err := os.WriteFile(xmlPath, []byte(newContent), 0644); err != nil {
+		logger.App.Warn("修复 on_reboot 配置失败", "vm", name, "error", err)
+		return
+	}
 	// 重载 libvirtd 使配置生效
 	utils.ExecCommand("systemctl", "reload", "libvirtd")
 }
@@ -1062,9 +1065,12 @@ func SetVMBootOrder(name string, bootOrder []string) error {
 
 	newXML := strings.Join(newLines, "\n")
 	xmlPath := fmt.Sprintf("/tmp/_boot-%s.xml", name)
-	utils.ExecShell(fmt.Sprintf("cat > %s << 'XMLEOF'\n%s\nXMLEOF", utils.ShellSingleQuote(xmlPath), newXML))
+	if err := os.WriteFile(xmlPath, []byte(newXML), 0644); err != nil {
+		return fmt.Errorf("写入启动顺序 XML 失败: %v", err)
+	}
+	defer os.Remove(xmlPath)
 	defineResult := utils.ExecCommand("virsh", "define", xmlPath)
-	utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(xmlPath)))
+	_ = os.Remove(xmlPath)
 	if defineResult.Error != nil {
 		return fmt.Errorf("设置启动顺序失败: %s", defineResult.Stderr)
 	}
@@ -1323,10 +1329,7 @@ func GetHostStats() (*HostStats, error) {
 	stats := &HostStats{}
 
 	// CPU 核心数
-	cpuResult := utils.ExecShell("nproc")
-	if cpuResult.Error == nil {
-		stats.CPUCount, _ = strconv.Atoi(strings.TrimSpace(cpuResult.Stdout))
-	}
+	stats.CPUCount = runtime.NumCPU()
 
 	// CPU 使用率
 	cpuUsageResult := utils.ExecShell(`top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1`)
@@ -1334,36 +1337,30 @@ func GetHostStats() (*HostStats, error) {
 		stats.CPUPercent, _ = strconv.ParseFloat(strings.TrimSpace(cpuUsageResult.Stdout), 64)
 	}
 
-	// 内存信息
-	memResult := utils.ExecShell(`free -k | awk 'NR==2{print $2,$3,$4}'`)
-	if memResult.Error == nil {
-		parts := strings.Fields(memResult.Stdout)
-		if len(parts) >= 3 {
-			stats.MemTotal, _ = strconv.ParseInt(parts[0], 10, 64)
-			stats.MemUsed, _ = strconv.ParseInt(parts[1], 10, 64)
-			stats.MemFree, _ = strconv.ParseInt(parts[2], 10, 64)
+	// 内存和 Swap 信息
+	if memInfo, err := utils.ReadMemInfo(); err == nil {
+		if v, ok := memInfo["MemTotal"]; ok {
+			stats.MemTotal = v
 		}
-	}
-
-	// Swap 信息
-	swapResult := utils.ExecShell(`free -k | awk 'NR==3{print $2,$3,$4}'`)
-	if swapResult.Error == nil {
-		parts := strings.Fields(swapResult.Stdout)
-		if len(parts) >= 3 {
-			stats.SwapTotal, _ = strconv.ParseInt(parts[0], 10, 64)
-			stats.SwapUsed, _ = strconv.ParseInt(parts[1], 10, 64)
-			stats.SwapFree, _ = strconv.ParseInt(parts[2], 10, 64)
+		if v, ok := memInfo["MemFree"]; ok {
+			stats.MemFree = v
 		}
+		stats.MemUsed = stats.MemTotal - stats.MemFree
+		if v, ok := memInfo["SwapTotal"]; ok {
+			stats.SwapTotal = v
+		}
+		if v, ok := memInfo["SwapFree"]; ok {
+			stats.SwapFree = v
+		}
+		stats.SwapUsed = stats.SwapTotal - stats.SwapFree
 	}
 
 	// KSM 内存合并页数
-	ksmSharedResult := utils.ExecShell(`cat /sys/kernel/mm/ksm/pages_shared 2>/dev/null`)
-	if ksmSharedResult.Error == nil {
-		stats.KSMPagesShared, _ = strconv.ParseInt(strings.TrimSpace(ksmSharedResult.Stdout), 10, 64)
+	if data, err := os.ReadFile("/sys/kernel/mm/ksm/pages_shared"); err == nil {
+		stats.KSMPagesShared, _ = strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
 	}
-	ksmSharingResult := utils.ExecShell(`cat /sys/kernel/mm/ksm/pages_sharing 2>/dev/null`)
-	if ksmSharingResult.Error == nil {
-		stats.KSMPagesSharing, _ = strconv.ParseInt(strings.TrimSpace(ksmSharingResult.Stdout), 10, 64)
+	if data, err := os.ReadFile("/sys/kernel/mm/ksm/pages_sharing"); err == nil {
+		stats.KSMPagesSharing, _ = strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
 	}
 
 	// 磁盘 IO 延迟（毫秒），通过 iostat 1 秒间隔采样获取实时 r_await
@@ -1373,14 +1370,10 @@ func GetHostStats() (*HostStats, error) {
 	}
 
 	// 磁盘信息（根分区）
-	diskResult := utils.ExecShell(`df -k / | awk 'NR==2{print $2,$3,$4}'`)
-	if diskResult.Error == nil {
-		parts := strings.Fields(diskResult.Stdout)
-		if len(parts) >= 3 {
-			stats.DiskTotal, _ = strconv.ParseInt(parts[0], 10, 64)
-			stats.DiskUsed, _ = strconv.ParseInt(parts[1], 10, 64)
-			stats.DiskFree, _ = strconv.ParseInt(parts[2], 10, 64)
-		}
+	if total, used, available, err := utils.GetDiskSpace("/"); err == nil {
+		stats.DiskTotal = total
+		stats.DiskUsed = used
+		stats.DiskFree = available
 	}
 
 	// 宿主机网络 IO (累加常见物理网卡，排除 virbr, vnet, docker, lo)
@@ -1998,13 +1991,13 @@ func SetVMNicModel(name, nicModel string) error {
 
 	newXML := strings.Join(newLines, "\n")
 	xmlPath := fmt.Sprintf("/tmp/_nic-%s.xml", name)
-	writeResult := utils.ExecShell(fmt.Sprintf("cat > %s << 'XMLEOF'\n%s\nXMLEOF", utils.ShellSingleQuote(xmlPath), newXML))
-	if writeResult.Error != nil {
-		return fmt.Errorf("写入 XML 失败: %s", writeResult.Stderr)
+	if err := os.WriteFile(xmlPath, []byte(newXML), 0644); err != nil {
+		return fmt.Errorf("写入网卡 XML 失败: %v", err)
 	}
+	defer os.Remove(xmlPath)
 
 	defineResult := utils.ExecCommand("virsh", "define", xmlPath)
-	utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(xmlPath)))
+	_ = os.Remove(xmlPath)
 	if defineResult.Error != nil {
 		return fmt.Errorf("修改网卡类型失败: %s", defineResult.Stderr)
 	}

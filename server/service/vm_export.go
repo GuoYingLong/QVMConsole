@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -67,13 +68,8 @@ func GetVMExportSize(vmName string) (int64, error) {
 	}
 
 	// 独立磁盘：返回实际文件大小
-	sizeResult := utils.ExecShell(fmt.Sprintf("stat -c '%%s' %s 2>/dev/null", utils.ShellSingleQuote(diskInfo.path)))
-	if sizeResult.Error == nil {
-		var size int64
-		fmt.Sscanf(strings.TrimSpace(sizeResult.Stdout), "%d", &size)
-		if size > 0 {
-			return size, nil
-		}
+	if fi, err := os.Stat(diskInfo.path); err == nil && fi.Size() > 0 {
+		return fi.Size(), nil
 	}
 
 	return 0, fmt.Errorf("无法获取磁盘大小")
@@ -144,7 +140,7 @@ func ExportVM(ctx context.Context, params *ExportVMParams, progressFn func(int, 
 		result := utils.ExecShellWithTimeout(convertCmd, 2*time.Hour)
 		if result.Error != nil {
 			// 清理不完整的文件
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(exportPath)))
+			_ = os.Remove(exportPath)
 			return nil, fmt.Errorf("导出失败（qemu-img convert）: %s", result.Stderr)
 		}
 	} else {
@@ -159,7 +155,7 @@ func ExportVM(ctx context.Context, params *ExportVMParams, progressFn func(int, 
 			result = utils.ExecCommandLongRunning("cp", "--sparse=always", diskInfo.path, exportPath)
 		}
 		if result.Error != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(exportPath)))
+			_ = os.Remove(exportPath)
 			return nil, fmt.Errorf("导出失败（cp）: %s", result.Stderr)
 		}
 	}
@@ -167,7 +163,7 @@ func ExportVM(ctx context.Context, params *ExportVMParams, progressFn func(int, 
 	// 检查取消
 	select {
 	case <-ctx.Done():
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(exportPath)))
+		_ = os.Remove(exportPath)
 		return nil, taskqueue.ErrTaskCanceled
 	default:
 	}

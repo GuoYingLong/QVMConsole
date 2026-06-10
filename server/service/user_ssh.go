@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"kvm_console/logger"
@@ -79,7 +80,7 @@ func regenerateSSHDenyConfig() error {
 
 	if len(users) == 0 {
 		// 没有需要禁止的用户，删除配置文件
-		utils.ExecShell(fmt.Sprintf("rm -f '%s'", configPath))
+		_ = os.Remove(configPath)
 	} else {
 		// 生成 DenyUsers 列表
 		var denyList []string
@@ -97,9 +98,8 @@ func regenerateSSHDenyConfig() error {
 		ensureSSHDInclude()
 
 		// 写入配置文件
-		writeResult := utils.ExecShell(fmt.Sprintf("cat > '%s' << 'SSHEOF'\n%sSSHEOF", configPath, config))
-		if writeResult.Error != nil {
-			return fmt.Errorf("写入 SSH 拒绝配置失败: %s", writeResult.Stderr)
+		if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
+			return fmt.Errorf("写入 SSH 拒绝配置失败: %v", err)
 		}
 	}
 
@@ -136,11 +136,16 @@ func syncAllUserShells() {
 
 // ensureSSHDInclude 确保 sshd_config 中包含 Include 指令
 func ensureSSHDInclude() {
+	sshdConfigPath := "/etc/ssh/sshd_config"
 	// 检查是否已包含 Include 指令
-	checkResult := utils.ExecShell("grep -q 'Include /etc/ssh/sshd_config.d/' /etc/ssh/sshd_config 2>/dev/null")
-	if checkResult.Error != nil {
-		// 没有找到，在文件开头添加 Include 指令
-		utils.ExecShell("sed -i '1i Include /etc/ssh/sshd_config.d/*.conf' /etc/ssh/sshd_config")
+	content, err := os.ReadFile(sshdConfigPath)
+	if err == nil && strings.Contains(string(content), "Include /etc/ssh/sshd_config.d/") {
+		return
+	}
+	// 没有找到，在文件开头添加 Include 指令
+	newContent := "Include /etc/ssh/sshd_config.d/*.conf\n" + string(content)
+	if err := utils.AtomicWriteFile(sshdConfigPath, []byte(newContent), 0644); err != nil {
+		logger.App.Warn("写入 sshd_config Include 指令失败", "error", err)
 	}
 }
 

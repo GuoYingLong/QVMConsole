@@ -256,9 +256,8 @@ func AttachExistingDisk(vmName, diskPath, bus string) (string, error) {
 		}
 
 		// 移动文件
-		mvResult := utils.ExecShell(fmt.Sprintf("mv %s %s", utils.ShellSingleQuote(diskPath), utils.ShellSingleQuote(destPath)))
-		if mvResult.Error != nil {
-			return "", fmt.Errorf("移动磁盘文件到默认目录失败: %s", mvResult.Stderr)
+		if err := os.Rename(diskPath, destPath); err != nil {
+			return "", fmt.Errorf("移动磁盘文件到默认目录失败: %v", err)
 		}
 		// 设置权限
 		utils.ExecCommand("chown", "libvirt-qemu:kvm", destPath)
@@ -416,7 +415,7 @@ func AddDiskWithBusInDir(vmName string, sizeGB int, format, bus, diskDir string)
 					return scsiDev, nil
 				}
 			}
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", err
 		}
 		diskXML = hotplugXML
@@ -428,7 +427,7 @@ func AddDiskWithBusInDir(vmName string, sizeGB int, format, bus, diskDir string)
 		attachFlags = 3 // VIR_DOMAIN_DEVICE_MODIFY_LIVE | VIR_DOMAIN_DEVICE_MODIFY_CONFIG
 	}
 	if err := attachDeviceFlagsRPC(vmName, diskXML, attachFlags); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", fmt.Errorf("挂载磁盘失败: %w", err)
 	}
 
@@ -742,7 +741,7 @@ func RemoveDisk(vmName, device string, deleteFile bool) error {
 
 	// 删除文件
 	if deleteFile && diskPath != "" {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 	}
 
 	return nil
@@ -840,9 +839,8 @@ func TransferDiskFile(diskPath, username string) error {
 	}
 
 	// 移动文件
-	mvResult := utils.ExecShell(fmt.Sprintf("mv %s %s", utils.ShellSingleQuote(diskPath), utils.ShellSingleQuote(destPath)))
-	if mvResult.Error != nil {
-		return fmt.Errorf("转移磁盘文件失败: %s", mvResult.Stderr)
+	if err := os.Rename(diskPath, destPath); err != nil {
+		return fmt.Errorf("转移磁盘文件失败: %v", err)
 	}
 
 	// 设置文件权限

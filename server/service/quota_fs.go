@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,20 +69,32 @@ func SetupUserProject(username string, dirs []string) error {
 	}
 	projectName := getProjectName(username)
 
+	// 读取现有配置
+	projectsContent, _ := os.ReadFile("/etc/projects")
+	projidContent, _ := os.ReadFile("/etc/projid")
+
 	// 更新 /etc/projects（project_id:directory）
+	projectsStr := string(projectsContent)
 	for _, dir := range dirs {
-		// 检查是否已存在该映射
-		checkResult := utils.ExecShell(fmt.Sprintf("grep -q %d:%s /etc/projects 2>/dev/null", projectID, utils.ShellSingleQuote(dir)))
-		if checkResult.Error != nil {
-			// 不存在，追加
-			utils.ExecShell(fmt.Sprintf("echo %d:%s >> /etc/projects", projectID, utils.ShellSingleQuote(dir)))
+		entry := fmt.Sprintf("%d:%s", projectID, dir)
+		if !strings.Contains(projectsStr, entry) {
+			projectsStr += entry + "\n"
 		}
 	}
 
 	// 更新 /etc/projid（project_name:project_id）
-	checkResult := utils.ExecShell(fmt.Sprintf("grep -q %s:%d /etc/projid 2>/dev/null", utils.ShellSingleQuote(projectName), projectID))
-	if checkResult.Error != nil {
-		utils.ExecShell(fmt.Sprintf("echo %s:%d >> /etc/projid", utils.ShellSingleQuote(projectName), projectID))
+	projidStr := string(projidContent)
+	entry := fmt.Sprintf("%s:%d", projectName, projectID)
+	if !strings.Contains(projidStr, entry) {
+		projidStr += entry + "\n"
+	}
+
+	// 原子写入
+	if err := utils.AtomicWriteFile("/etc/projects", []byte(projectsStr), 0644); err != nil {
+		return fmt.Errorf("写入 /etc/projects 失败: %w", err)
+	}
+	if err := utils.AtomicWriteFile("/etc/projid", []byte(projidStr), 0644); err != nil {
+		return fmt.Errorf("写入 /etc/projid 失败: %w", err)
 	}
 
 	// 对每个目录设置 project ID 和继承属性
@@ -144,8 +157,44 @@ func RemoveUserStorageQuota(username string) error {
 
 	// 清理 /etc/projects 和 /etc/projid 中的条目
 	projectName := getProjectName(username)
-	utils.ExecShell(fmt.Sprintf("sed -i '/^%d:/d' /etc/projects 2>/dev/null", projectID))
-	utils.ExecShell(fmt.Sprintf("sed -i '/^%s:/d' /etc/projid 2>/dev/null", utils.ShellSingleQuote(projectName)))
+
+	// 清理 /etc/projects
+	if projectsContent, err := os.ReadFile("/etc/projects"); err == nil {
+		var newLines []string
+		prefix := fmt.Sprintf("%d:", projectID)
+		for _, line := range strings.Split(string(projectsContent), "\n") {
+			if strings.HasPrefix(line, prefix) {
+				continue
+			}
+			if line != "" {
+				newLines = append(newLines, line)
+			}
+		}
+		newContent := strings.Join(newLines, "\n")
+		if len(newLines) > 0 {
+			newContent += "\n"
+		}
+		_ = utils.AtomicWriteFile("/etc/projects", []byte(newContent), 0644)
+	}
+
+	// 清理 /etc/projid
+	if projidContent, err := os.ReadFile("/etc/projid"); err == nil {
+		var newLines []string
+		prefix := fmt.Sprintf("%s:", projectName)
+		for _, line := range strings.Split(string(projidContent), "\n") {
+			if strings.HasPrefix(line, prefix) {
+				continue
+			}
+			if line != "" {
+				newLines = append(newLines, line)
+			}
+		}
+		newContent := strings.Join(newLines, "\n")
+		if len(newLines) > 0 {
+			newContent += "\n"
+		}
+		_ = utils.AtomicWriteFile("/etc/projid", []byte(newContent), 0644)
+	}
 
 	return nil
 }
@@ -258,8 +307,11 @@ func parseQuotaNumber(s string) (int64, error) {
 // IsStorageFilesystemMounted 检查专用存储文件系统是否已挂载
 func IsStorageFilesystemMounted() bool {
 	mountPoint := GetStorageMountPoint()
-	result := utils.ExecShell(fmt.Sprintf("mount | grep -q %s", utils.ShellSingleQuote(" "+mountPoint+" ")))
-	return result.Error == nil
+	data, err := os.ReadFile("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), mountPoint)
 }
 
 // InitStorageFilesystem 初始化专用存储文件系统
@@ -278,12 +330,8 @@ func InitStorageFilesystem(sizeGB int) error {
 	if strings.TrimSpace(checkResult.Stdout) != "yes" {
 		if sizeGB <= 0 {
 			// 默认与根分区大小相同
-			rootSizeResult := utils.ExecShell("df -k / | awk 'NR==2{print $2}'")
-			if rootSizeResult.Error == nil && strings.TrimSpace(rootSizeResult.Stdout) != "" {
-				rootKB, err := strconv.ParseInt(strings.TrimSpace(rootSizeResult.Stdout), 10, 64)
-				if err == nil && rootKB > 0 {
-					sizeGB = int(rootKB / 1024 / 1024)
-				}
+			if total, _, _, err := utils.GetDiskSpace("/"); err == nil && total > 0 {
+				sizeGB = int(total / 1024 / 1024)
 			}
 			if sizeGB <= 0 {
 				sizeGB = 100

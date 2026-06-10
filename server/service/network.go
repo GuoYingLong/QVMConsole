@@ -699,16 +699,14 @@ func removePortForwardsForIP(targetIP string) {
 func buildVMOwnerMap() map[string]string {
 	owners := make(map[string]string)
 	vmAccessDir := config.GlobalConfig.VMAccessDir
-	lsResult := utils.ExecShell(fmt.Sprintf("ls %s 2>/dev/null", utils.ShellSingleQuote(vmAccessDir)))
-	if lsResult.Error != nil || strings.TrimSpace(lsResult.Stdout) == "" {
+
+	entries, err := os.ReadDir(vmAccessDir)
+	if err != nil {
 		return owners
 	}
 
-	for _, username := range strings.Split(lsResult.Stdout, "\n") {
-		username = strings.TrimSpace(username)
-		if username == "" {
-			continue
-		}
+	for _, entry := range entries {
+		username := entry.Name()
 		for _, vmName := range GetUserVMList(username) {
 			vmName = strings.TrimSpace(vmName)
 			if vmName != "" {
@@ -1663,7 +1661,7 @@ func RestorePortForwardRules() error {
 // SavePortForwardRules 持久化端口转发规则
 func SavePortForwardRules() error {
 	portfwdDir := config.GlobalConfig.PortForwardDir
-	utils.ExecShell(fmt.Sprintf("mkdir -p '%s/backups'", portfwdDir))
+	os.MkdirAll(portfwdDir+"/backups", 0755)
 
 	hostIP := getHostIP()
 
@@ -1710,10 +1708,8 @@ func SavePortForwardRules() error {
 	}
 
 	rulesPath := portfwdDir + "/rules.sh"
-	writeResult := utils.ExecShell(fmt.Sprintf("cat > %s << 'RULESEOF'\n%s\nRULESEOF\nchmod +x %s",
-		utils.ShellSingleQuote(rulesPath), script, utils.ShellSingleQuote(rulesPath)))
-	if writeResult.Error != nil {
-		return fmt.Errorf("保存规则失败: %s", writeResult.Stderr)
+	if err := os.WriteFile(rulesPath, []byte(script), 0755); err != nil {
+		return fmt.Errorf("保存规则失败: %v", err)
 	}
 
 	return nil

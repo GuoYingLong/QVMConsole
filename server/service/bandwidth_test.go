@@ -32,31 +32,6 @@ func TestOVSBandwidthMeterArg(t *testing.T) {
 	}
 }
 
-func TestDomiftuneBandwidthArgClearsAllFields(t *testing.T) {
-	if got := domiftuneBandwidthArg(0, 0, 0); got != "0,0,0" {
-		t.Fatalf("zero bandwidth should clear average/peak/burst explicitly, got %q", got)
-	}
-	if got := domiftuneBandwidthArg(1250, 1250, 37500); got != "1250,1250,37500" {
-		t.Fatalf("unexpected non-zero bandwidth arg: %q", got)
-	}
-}
-
-func TestParseVMBandwidthConfigRaw(t *testing.T) {
-	raw := `inbound.average: 625
-inbound.peak: 625
-inbound.burst: 18750
-outbound.average: 250
-outbound.peak: 250
-outbound.burst: 7500`
-	config := parseVMBandwidthConfigRaw(raw)
-	if config.InboundAvg != 625 || config.InboundPeak != 625 || config.InboundBurst != 18750 {
-		t.Fatalf("unexpected inbound config: %+v", config)
-	}
-	if config.OutboundAvg != 250 || config.OutboundPeak != 250 || config.OutboundBurst != 7500 {
-		t.Fatalf("unexpected outbound config: %+v", config)
-	}
-}
-
 func TestTCRateAndBurstForOneMbps(t *testing.T) {
 	oneMbpsKBps := MbpsToKBps(1)
 	if got := tcRateKbit(oneMbpsKBps); got != 1000 {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -413,7 +414,7 @@ func runWritableGuestfishOperation(ctx context.Context, diskPath string, command
 	result := utils.ExecShellContextWithTimeout(ctx, b.String(), 10*time.Minute)
 	if result.Error != nil {
 		for _, cleanupPath := range cleanupPaths {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(cleanupPath)))
+			_ = os.Remove(cleanupPath)
 		}
 		if ctx != nil && ctx.Err() != nil {
 			return fmt.Errorf("%s已取消", operationName)

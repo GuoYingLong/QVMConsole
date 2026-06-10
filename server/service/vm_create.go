@@ -6,7 +6,6 @@ import (
 	"kvm_console/logger"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"kvm_console/config"
@@ -229,7 +228,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 
 	progressFn(30, "生成虚拟机配置...")
 	if err := EnsureOVSNetworkReady(); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 
@@ -240,7 +239,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 
 	// 启动前检查宿主机可用内存，预留系统开销
 	if err := CheckHostMemory(ramMB); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 
@@ -344,7 +343,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	installResult := utils.ExecCommandLongRunning("bash", "-c", installCmd)
 	if installResult.Error != nil {
 		// 生成失败，清理磁盘
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", fmt.Errorf("生成虚拟机 XML 失败: %s", installResult.Stderr)
 	}
 	// virt-install --print-xml 带 --cdrom 时会输出两个 <domain> XML（安装阶段+后续阶段）
@@ -372,33 +371,33 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	if memoryMeta != nil {
 		vmXML, err = ApplyMemoryMetadataToDomainXML(vmXML, memoryMeta, enableFPR)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", err
 		}
 	}
 	vmXML, err = ApplyRTCConfigToDomainXML(vmXML, params.RTCOffset, params.RTCStartDate, params.OSType)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML, err = ApplyVMGuestAgentConfigToDomainXML(vmXML, params.GuestAgent)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML, err = ApplySMBIOS1ConfigToDomainXML(vmXML, params.SMBIOS1, true)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML, err = ApplyVMAPICToDomainXML(vmXML, params.APIC)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML, err = ApplyVMPAEToDomainXML(vmXML, params.PAE)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML = ApplyVMVideoModelToDomainXML(vmXML, params.VideoModel, params.OSType)
@@ -411,12 +410,12 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	if params.CPUAffinity != "" {
 		affinityCores, err := ParseCPUAffinity(params.CPUAffinity)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", fmt.Errorf("CPU 亲和性格式错误: %w", err)
 		}
 		if len(affinityCores) > 0 {
 			if err := ValidateCPUAffinity(affinityCores); err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+				_ = os.Remove(diskPath)
 				return "", err
 			}
 		}
@@ -426,22 +425,22 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	if normalizedBootType != "" {
 		vmXML, err = ApplyVMBootTypeToDomainXML(params.Name, vmXML, normalizedBootType)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", err
 		}
 	}
 	vmXML, err = ApplyVPCSwitchToDomainXML(vmXML, params.SwitchID)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	vmXML, err = ApplyAdditionalCDROMsToDomainXML(vmXML, params.ISOPaths)
 	if err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	if err := ensureVMUEFINVRAMFile(params.Name, vmXML, normalizedBootType); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 
@@ -449,24 +448,24 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	if len(params.HostDevices) > 0 {
 		progressFn(55, "配置硬件直通设备...")
 		if err := EnsureVfioModuleLoaded(); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", fmt.Errorf("加载 vfio-pci 模块失败: %w", err)
 		}
 		for _, hd := range params.HostDevices {
 			if err := ValidatePCIPassthrough(hd.PCIAddress); err != nil {
-				utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+				_ = os.Remove(diskPath)
 				return "", fmt.Errorf("设备 %s 直通验证失败: %w", hd.PCIAddress, err)
 			}
 			if !isDeviceVfioBound(hd.PCIAddress) {
 				if err := BindPCIDeviceToVfio(hd.PCIAddress); err != nil {
-					utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+					_ = os.Remove(diskPath)
 					return "", fmt.Errorf("绑定设备 %s 到 vfio-pci 失败: %w", hd.PCIAddress, err)
 				}
 			}
 		}
 		vmXML, err = ApplyHostDevsToDomainXML(vmXML, params.HostDevices)
 		if err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", fmt.Errorf("应用硬件直通设备失败: %w", err)
 		}
 	}
@@ -474,34 +473,34 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	// 写入临时文件并定义虚拟机
 	xmlPath := fmt.Sprintf("/tmp/_vm-create-%s.xml", params.Name)
 	if err := os.WriteFile(xmlPath, []byte(vmXML), 0644); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", fmt.Errorf("写入虚拟机 XML 失败: %w", err)
 	}
 
 	defineResult := utils.ExecCommand("virsh", "define", xmlPath)
-	utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(xmlPath)))
+	_ = os.Remove(xmlPath)
 	if defineResult.Error != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", fmt.Errorf("定义虚拟机失败: %s", defineResult.Stderr)
 	}
 	if memoryMeta != nil {
 		if err := writeVMMemoryMetadata(params.Name, memoryMeta); err != nil {
-			utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+			_ = os.Remove(diskPath)
 			return "", err
 		}
 	}
 	if err := SetVMRemark(params.Name, params.Remark); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	if err := SetVMFreeze(params.Name, params.Freeze); err != nil {
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", err
 	}
 	if err := StartVM(params.Name); err != nil {
 		// 先 undefine VM 定义，再删除磁盘
 		utils.ExecCommand("virsh", "undefine", params.Name, "--nvram", "--snapshots-metadata")
-		utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(diskPath)))
+		_ = os.Remove(diskPath)
 		return "", fmt.Errorf("启动虚拟机失败(已清理资源): %w", err)
 	}
 
@@ -623,29 +622,13 @@ func getNthDiskDevice(vmName string, n int) string {
 // 返回 nil 表示内存充足，否则返回详细错误信息
 func CheckHostMemory(requiredMB int) error {
 	// 读取 MemAvailable（KB），比 MemFree 更准确，包含了可回收的缓存
-	result := utils.ExecShell("awk '/MemAvailable:/ {print $2}' /proc/meminfo")
-	if result.Error != nil {
-		// 如果读不到 MemAvailable，回退使用 free 命令
-		result = utils.ExecShell("free -m | awk 'NR==2{print $7}'")
-		if result.Error != nil {
-			return fmt.Errorf("无法获取宿主机内存信息: %w", result.Error)
-		}
-		availMB, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
-		if err != nil {
-			return fmt.Errorf("解析可用内存失败: %w", err)
-		}
-		// 预留 512MB 系统开销 + 10% 缓冲
-		requiredWithBuffer := requiredMB + requiredMB/10 + 512
-		if availMB < requiredWithBuffer {
-			return fmt.Errorf("宿主机内存不足: 需要 %dMB（含系统开销预留），可用 %dMB，请释放部分资源或降低虚拟机内存配置后重试",
-				requiredWithBuffer, availMB)
-		}
-		return nil
-	}
-
-	availKB, err := strconv.ParseInt(strings.TrimSpace(result.Stdout), 10, 64)
+	memInfo, err := utils.ReadMemInfo()
 	if err != nil {
-		return fmt.Errorf("解析可用内存失败: %w", err)
+		return fmt.Errorf("无法获取宿主机内存信息: %w", err)
+	}
+	availKB, ok := memInfo["MemAvailable"]
+	if !ok {
+		return fmt.Errorf("无法获取宿主机可用内存信息")
 	}
 	availMB := int(availKB / 1024)
 

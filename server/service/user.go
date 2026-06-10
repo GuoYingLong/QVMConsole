@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -234,15 +236,12 @@ func provisionSystemUserResources(user *model.User, password string) error {
 // FindVMOwner 根据 VM 名称查找归属用户
 func FindVMOwner(vmName string) string {
 	vmAccessDir := config.GlobalConfig.VMAccessDir
-	lsResult := utils.ExecShell(fmt.Sprintf("ls %s 2>/dev/null", vmAccessDir))
-	if lsResult.Error != nil || lsResult.Stdout == "" {
+	entries, err := os.ReadDir(vmAccessDir)
+	if err != nil {
 		return ""
 	}
-	for _, username := range strings.Split(lsResult.Stdout, "\n") {
-		username = strings.TrimSpace(username)
-		if username == "" {
-			continue
-		}
+	for _, entry := range entries {
+		username := entry.Name()
 		if !isExistingVMAccessUser(username) {
 			continue
 		}
@@ -490,9 +489,8 @@ func DeleteSystemUser(username string, progressFn func(int, string)) error {
 	userStorageDir := fmt.Sprintf("%s/%s", GetStorageMountPoint(), username)
 	checkResult := utils.ExecShell(fmt.Sprintf("test -d %s && echo yes || echo no", utils.ShellSingleQuote(userStorageDir)))
 	if strings.TrimSpace(checkResult.Stdout) == "yes" {
-		result := utils.ExecShell(fmt.Sprintf("rm -rf %s", utils.ShellSingleQuote(userStorageDir)))
-		if result.Error != nil {
-			logger.App.Warn("删除用户存储池目录失败", "user", username, "stderr", result.Stderr)
+		if err := os.RemoveAll(userStorageDir); err != nil {
+			logger.App.Warn("删除用户存储池目录失败", "user", username, "error", err)
 		}
 	}
 
@@ -510,7 +508,7 @@ func DeleteSystemUser(username string, progressFn func(int, string)) error {
 
 	// 第七步：删除 VM 分配文件
 	progressFn(85, "正在清理 VM 访问配置...")
-	utils.ExecShell(fmt.Sprintf("rm -f %s/%s", config.GlobalConfig.VMAccessDir, utils.ShellSingleQuote(username)))
+	_ = os.Remove(filepath.Join(config.GlobalConfig.VMAccessDir, username))
 
 	// 第八步：删除系统用户
 	progressFn(90, "正在删除系统用户...")
@@ -542,17 +540,14 @@ func regeneratePolkitRules() error {
 	vmAccessDir := config.GlobalConfig.VMAccessDir
 
 	// 读取所有用户的 VM 映射
-	lsResult := utils.ExecShell(fmt.Sprintf("ls %s 2>/dev/null", vmAccessDir))
-	if lsResult.Error != nil || lsResult.Stdout == "" {
+	entries, err := os.ReadDir(vmAccessDir)
+	if err != nil {
 		return nil
 	}
 
 	var mappings []string
-	for _, username := range strings.Split(lsResult.Stdout, "\n") {
-		username = strings.TrimSpace(username)
-		if username == "" {
-			continue
-		}
+	for _, entry := range entries {
+		username := entry.Name()
 		if !isExistingVMAccessUser(username) {
 			continue
 		}
@@ -617,9 +612,8 @@ polkit.addRule(function(action, subject) {
 
 	// 写入规则文件
 	polkitPath := "/etc/polkit-1/rules.d/10-vmoperator.rules"
-	writeResult := utils.ExecShell(fmt.Sprintf("cat > '%s' << 'POLKITEOF'\n%s\nPOLKITEOF", polkitPath, polkitRules))
-	if writeResult.Error != nil {
-		return fmt.Errorf("写入 polkit 规则失败: %s", writeResult.Stderr)
+	if err := os.WriteFile(polkitPath, []byte(polkitRules), 0644); err != nil {
+		return fmt.Errorf("写入 polkit 规则失败: %v", err)
 	}
 
 	// 重启 polkit

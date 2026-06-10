@@ -246,9 +246,8 @@ func saveOriginalConfig(vmName string) (*RescueOriginalConfig, error) {
 	}
 
 	configPath := rescueConfigPath(vmName)
-	writeResult := utils.ExecShell(fmt.Sprintf("cat > %s << 'JSONEOF'\n%s\nJSONEOF", utils.ShellSingleQuote(configPath), string(data)))
-	if writeResult.Error != nil {
-		return nil, fmt.Errorf("保存配置文件失败: %s", writeResult.Stderr)
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return nil, fmt.Errorf("保存配置文件失败: %v", err)
 	}
 
 	return origConfig, nil
@@ -257,13 +256,13 @@ func saveOriginalConfig(vmName string) (*RescueOriginalConfig, error) {
 // loadOriginalConfig 从临时文件加载原始配置
 func loadOriginalConfig(vmName string) (*RescueOriginalConfig, error) {
 	configPath := rescueConfigPath(vmName)
-	catResult := utils.ExecShell(fmt.Sprintf("cat %s", utils.ShellSingleQuote(configPath)))
-	if catResult.Error != nil {
-		return nil, fmt.Errorf("读取配置文件失败: %s", catResult.Stderr)
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %w", err)
 	}
 
 	var origConfig RescueOriginalConfig
-	if err := json.Unmarshal([]byte(catResult.Stdout), &origConfig); err != nil {
+	if err := json.Unmarshal(data, &origConfig); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
 	}
 

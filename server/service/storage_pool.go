@@ -828,9 +828,8 @@ func buildISOInfo(filePath, poolName string) ISOFileInfo {
 	if sizeResult.Error == nil {
 		iso.Size = strings.TrimSpace(sizeResult.Stdout)
 	}
-	bytesResult := utils.ExecShell(fmt.Sprintf("stat -c '%%s' %s 2>/dev/null", utils.ShellSingleQuote(filePath)))
-	if bytesResult.Error == nil {
-		iso.SizeBytes, _ = strconv.ParseInt(strings.TrimSpace(bytesResult.Stdout), 10, 64)
+	if fi, err := os.Stat(filePath); err == nil {
+		iso.SizeBytes = fi.Size()
 	}
 	iso.OSType, iso.OSVariant = inferOSFromISO(nameLower)
 	if iso.OSType == "windows" {

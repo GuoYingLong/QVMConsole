@@ -1912,9 +1912,8 @@ func migrationDiskStorageTargetsChanged(preview *VMMigrationPreview, params VMMi
 }
 
 func writeLocalFile(path, content string) error {
-	result := utils.ExecShell(fmt.Sprintf("cat > %s <<'EOF'\n%s\nEOF", utils.ShellSingleQuote(path), content))
-	if result.Error != nil {
-		return fmt.Errorf("%s", firstNonEmpty(result.Stderr, result.Error.Error()))
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return fmt.Errorf("写入文件 %s 失败: %v", path, err)
 	}
 	return nil
 }

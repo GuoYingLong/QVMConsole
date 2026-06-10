@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -170,9 +171,11 @@ func SetVMVideoModel(name, videoModel string) error {
 	}
 
 	xmlPath := fmt.Sprintf("/tmp/_video-%s.xml", name)
-	utils.ExecShell(fmt.Sprintf("cat > %s << 'XMLEOF'\n%s\nXMLEOF", utils.ShellSingleQuote(xmlPath), xmlStr))
+	if err := os.WriteFile(xmlPath, []byte(xmlStr), 0644); err != nil {
+		return fmt.Errorf("写入显示设备 XML 失败: %v", err)
+	}
+	defer os.Remove(xmlPath)
 	defineResult := utils.ExecCommand("virsh", "define", xmlPath)
-	utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(xmlPath)))
 	if defineResult.Error != nil {
 		return fmt.Errorf("修改显示设备失败: %s", defineResult.Stderr)
 	}

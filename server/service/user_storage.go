@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -132,8 +133,8 @@ func IsStorageInitialized(username string) bool {
 
 	// 确保 disk 目录在 project quota mapping 中（兼容旧用户升级场景）
 	if diskOK {
-		checkResult := utils.ExecShell(fmt.Sprintf("grep -q %s /etc/projects 2>/dev/null", utils.ShellSingleQuote(diskDir)))
-		if checkResult.Error != nil {
+		projectsContent, err := os.ReadFile("/etc/projects")
+		if err != nil || !strings.Contains(string(projectsContent), diskDir) {
 			// disk 目录不在 project mapping 中，自动加入
 			_ = SetupUserProject(username, []string{diskDir})
 			// 对已有文件追溯设置 project ID
@@ -350,9 +351,8 @@ func DeleteUserFile(username, category, filename string) error {
 		return fmt.Errorf("文件不存在: %s", filename)
 	}
 
-	result := utils.ExecShell(fmt.Sprintf("rm -f %s", utils.ShellSingleQuote(filePath)))
-	if result.Error != nil {
-		return fmt.Errorf("删除文件失败: %s", result.Stderr)
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("删除文件失败: %v", err)
 	}
 
 	return nil

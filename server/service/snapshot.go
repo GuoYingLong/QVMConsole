@@ -1577,7 +1577,7 @@ func copyActiveExternalOverlayToStandalone(vmName, target, overlayPath string) e
 		_ = os.Remove(destPath)
 		return fmt.Errorf("blockcopy 失败: %s", result.Stderr)
 	}
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", destPath)
+	_ = utils.ChownLibvirtQEMU(destPath)
 	current, err := getCurrentVMDiskSources(vmName)
 	if err != nil {
 		return err
@@ -1716,9 +1716,8 @@ func ensureSnapshotDiskAccessForPaths(diskPaths []string) error {
 			return fmt.Errorf("检查磁盘文件失败 %s: %w", diskPath, err)
 		}
 		// 修正文件权限为 libvirt-qemu:kvm，避免切回原始盘或 overlay 后 QEMU 无法访问。
-		chownResult := utils.ExecCommand("chown", "libvirt-qemu:kvm", diskPath)
-		if chownResult.Error != nil {
-			return fmt.Errorf("chown %s 失败: %s", diskPath, chownResult.Stderr)
+		if err := utils.ChownLibvirtQEMU(diskPath); err != nil {
+			return fmt.Errorf("chown %s 失败: %w", diskPath, err)
 		} else {
 			logger.App.Info("已修正磁盘权限", "path", diskPath)
 		}

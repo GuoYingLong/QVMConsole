@@ -624,11 +624,21 @@ func copyTemplateNVRAMFromVM(vmName, templatePath string) string {
 		return ""
 	}
 	targetPath := getTemplateNVRAMPath(templatePath)
-	result := utils.ExecCommand("cp", sourcePath, targetPath)
-	if result.Error != nil {
+	src, err := os.Open(sourcePath)
+	if err != nil {
 		return ""
 	}
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", targetPath)
+	defer src.Close()
+	dst, err := os.Create(targetPath)
+	if err != nil {
+		return ""
+	}
+	defer dst.Close()
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = os.Remove(targetPath)
+		return ""
+	}
+	_ = utils.ChownLibvirtQEMU(targetPath)
 	_ = os.Chmod(targetPath, 0o600)
 	return targetPath
 }
@@ -1188,8 +1198,8 @@ func PrepareTemplate(params *PrepareTemplateParams) error {
 		_ = os.Remove(destPath)
 		return err
 	}
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", destPath)
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", getMetaPath(destPath))
+	_ = utils.ChownLibvirtQEMU(destPath)
+	_ = utils.ChownLibvirtQEMU(getMetaPath(destPath))
 	return nil
 }
 
@@ -1910,7 +1920,7 @@ func rebaseQcow2BackingToParent(diskPath, oldParentPath, newParentPath string) e
 	if err := ensureDiskBackingMatches(diskPath, newParentPath); err != nil {
 		return err
 	}
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", diskPath)
+	_ = utils.ChownLibvirtQEMU(diskPath)
 	return nil
 }
 
@@ -1962,7 +1972,7 @@ func updatePromotedTemplateMeta(child TemplateInfo, parent TemplateInfo) error {
 	if err := saveTemplateMeta(child.Path, meta); err != nil {
 		return err
 	}
-	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", getMetaPath(child.Path))
+	_ = utils.ChownLibvirtQEMU(getMetaPath(child.Path))
 	return nil
 }
 

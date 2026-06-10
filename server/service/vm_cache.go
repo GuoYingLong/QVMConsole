@@ -3,9 +3,10 @@ package service
 import (
 	"errors"
 	"fmt"
-	"strconv"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"gorm.io/gorm"
@@ -13,7 +14,6 @@ import (
 
 	"kvm_console/logger"
 	"kvm_console/model"
-	"kvm_console/utils"
 )
 
 var errVMCacheSourceMissing = errors.New("vm cache source missing")
@@ -377,28 +377,15 @@ func readVMCreatedAtText(name string) string {
 	}
 
 	xmlPath := fmt.Sprintf("/etc/libvirt/qemu/%s.xml", name)
-	result := utils.ExecShell(fmt.Sprintf("stat -c '%%W|%%Y' %s 2>/dev/null", utils.ShellSingleQuote(xmlPath)))
-	if result.Error != nil {
+	info, err := os.Stat(xmlPath)
+	if err != nil {
 		return ""
 	}
 
-	parts := strings.Split(strings.TrimSpace(result.Stdout), "|")
-	if len(parts) < 2 {
-		return ""
-	}
-
-	createdSeconds := int64(0)
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		value, err := strconv.ParseInt(part, 10, 64)
-		if err != nil || value <= 0 {
-			continue
-		}
-		createdSeconds = value
-		break
+	stat := info.Sys().(*syscall.Stat_t)
+	createdSeconds := stat.Ctim.Sec
+	if createdSeconds <= 0 {
+		createdSeconds = stat.Mtim.Sec
 	}
 	if createdSeconds <= 0 {
 		return ""

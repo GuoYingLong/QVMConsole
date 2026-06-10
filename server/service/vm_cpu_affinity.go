@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -85,15 +86,7 @@ func ParseCPUAffinity(input string) ([]int, error) {
 
 // GetSystemCPUCores 获取系统可用的 CPU 核心总数
 func GetSystemCPUCores() (int, error) {
-	result := utils.ExecShell("nproc --all 2>/dev/null")
-	if result.Error != nil {
-		return 0, fmt.Errorf("无法获取系统 CPU 核心数: %w", result.Error)
-	}
-	count, err := strconv.Atoi(strings.TrimSpace(result.Stdout))
-	if err != nil || count <= 0 {
-		return 0, fmt.Errorf("无法解析 CPU 核心数: %s", result.Stdout)
-	}
-	return count, nil
+	return runtime.NumCPU(), nil
 }
 
 // ValidateCPUAffinity 校验 CPU 亲和性核心编号是否在系统可用范围内
