@@ -87,7 +87,7 @@ type BootDevice struct {
 type VmDetail struct {
 	VmInfo
 	DiskPath               string                    `json:"disk_path"`    // 磁盘路径
-	DiskHealthy            *bool                     `json:"disk_healthy"`  // 磁盘完整性标记: nil=未检查, true=正常, false=磁盘文件缺失
+	DiskHealthy            *bool                     `json:"disk_healthy"` // 磁盘完整性标记: nil=未检查, true=正常, false=磁盘文件缺失
 	UUID                   string                    `json:"uuid"`         // 虚拟机 UUID
 	VNCPort                string                    `json:"vnc_port"`     // VNC 端口
 	Snapshots              []string                  `json:"snapshots"`    // 快照列表
@@ -136,15 +136,16 @@ type VMListOptions struct {
 type HostStats struct {
 	CPUCount        int     `json:"cpu_count"`
 	CPUPercent      float64 `json:"cpu_percent"`
-	MemTotal        int64   `json:"mem_total"`  // KB
-	MemFree         int64   `json:"mem_free"`   // KB
-	MemUsed         int64   `json:"mem_used"`   // KB
-	SwapTotal       int64   `json:"swap_total"` // KB
-	SwapFree        int64   `json:"swap_free"`  // KB
-	SwapUsed        int64   `json:"swap_used"`  // KB
-	DiskTotal       int64   `json:"disk_total"` // KB
-	DiskUsed        int64   `json:"disk_used"`  // KB
-	DiskFree        int64   `json:"disk_free"`  // KB
+	MemTotal        int64   `json:"mem_total"`     // KB
+	MemFree         int64   `json:"mem_free"`      // KB（不含 buffer/cache，仅供参考）
+	MemAvailable    int64   `json:"mem_available"` // KB（含可回收缓存，反映实际可用内存）
+	MemUsed         int64   `json:"mem_used"`      // KB（基于 MemAvailable 计算的实际占用）
+	SwapTotal       int64   `json:"swap_total"`    // KB
+	SwapFree        int64   `json:"swap_free"`     // KB
+	SwapUsed        int64   `json:"swap_used"`     // KB
+	DiskTotal       int64   `json:"disk_total"`    // KB
+	DiskUsed        int64   `json:"disk_used"`     // KB
+	DiskFree        int64   `json:"disk_free"`     // KB
 	NetRxBytes      int64   `json:"net_rx_bytes"`
 	NetTxBytes      int64   `json:"net_tx_bytes"`
 	DiskRdBytes     int64   `json:"disk_rd_bytes"`
@@ -1345,7 +1346,14 @@ func GetHostStats() (*HostStats, error) {
 		if v, ok := memInfo["MemFree"]; ok {
 			stats.MemFree = v
 		}
-		stats.MemUsed = stats.MemTotal - stats.MemFree
+		// 优先使用 MemAvailable 计算实际已用内存（排除可回收的 buffer/cache）
+		if v, ok := memInfo["MemAvailable"]; ok && v > 0 {
+			stats.MemAvailable = v
+			stats.MemUsed = stats.MemTotal - v
+		} else {
+			// 兼容旧内核：退回到 MemFree 计算
+			stats.MemUsed = stats.MemTotal - stats.MemFree
+		}
 		if v, ok := memInfo["SwapTotal"]; ok {
 			stats.SwapTotal = v
 		}
@@ -2027,7 +2035,6 @@ func parseInfoInt(output, key string) int {
 	}
 	return 0
 }
-
 
 // parseMemStat 从 dommemstat 输出解析内存值（KB）
 func parseMemStat(output, key string) int64 {
