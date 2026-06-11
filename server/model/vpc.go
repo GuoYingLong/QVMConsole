@@ -79,15 +79,17 @@ func (VPCSecurityGroupRule) TableName() string {
 
 // VPCVMBinding VM 与交换机、安全组的绑定。每个 VM 可以有多个绑定（多网口），通过 interface_order 区分。
 type VPCVMBinding struct {
-	ID              uint      `json:"id" gorm:"primaryKey"`
-	VMName          string    `json:"vm_name" gorm:"uniqueIndex:idx_vm_interface;not null;size:128"`
-	Username        string    `json:"username" gorm:"index;not null;size:64"`
-	SwitchID        uint      `json:"switch_id" gorm:"index;not null"`
-	SecurityGroupID uint      `json:"security_group_id" gorm:"index;not null"`
-	InterfaceOrder  int       `json:"interface_order" gorm:"uniqueIndex:idx_vm_interface;not null;default:0"`
-	NicModel        string    `json:"nic_model" gorm:"size:32;default:virtio"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID                   uint      `json:"id" gorm:"primaryKey"`
+	VMName               string    `json:"vm_name" gorm:"uniqueIndex:idx_vm_interface;not null;size:128"`
+	Username             string    `json:"username" gorm:"index;not null;size:64"`
+	SwitchID             uint      `json:"switch_id" gorm:"index;not null"`
+	SecurityGroupID      uint      `json:"security_group_id" gorm:"index;not null"`
+	InterfaceOrder       int       `json:"interface_order" gorm:"uniqueIndex:idx_vm_interface;not null;default:0"`
+	NicModel             string    `json:"nic_model" gorm:"size:32;default:virtio"`
+	BandwidthInboundAvg  int       `json:"bandwidth_inbound_avg" gorm:"default:0"`
+	BandwidthOutboundAvg int       `json:"bandwidth_outbound_avg" gorm:"default:0"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 func (VPCVMBinding) TableName() string {

@@ -133,54 +133,6 @@
         </el-table>
       </el-tab-pane>
 
-      <!-- 速率限制 -->
-      <el-tab-pane v-if="!isLightweight" label="速率限制" name="bandwidth">
-        <div class="bandwidth-panel">
-          <el-alert
-            type="info"
-            :closable="false"
-            class="bandwidth-tip"
-            :title="bandwidthHelpText"
-          />
-          <el-form label-width="140px" class="bandwidth-form">
-            <el-row :gutter="20">
-              <el-col :xs="24" :sm="12">
-                <el-form-item label="下行速率 (Mbps)">
-                  <el-input-number
-                    v-model="bandwidthForm.bandwidth_inbound_avg"
-                    :min="bandwidthMinDown"
-                    :max="bandwidthMaxDown"
-                    :disabled="bandwidthSubmitting"
-                    style="width: 100%;"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item label="上行速率 (Mbps)">
-                  <el-input-number
-                    v-model="bandwidthForm.bandwidth_outbound_avg"
-                    :min="bandwidthMinUp"
-                    :max="bandwidthMaxUp"
-                    :disabled="bandwidthSubmitting"
-                    style="width: 100%;"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-descriptions :column="2" border size="small" class="quota-summary">
-              <el-descriptions-item label="当前下行">{{ runtimeStatus?.bandwidth?.inbound_avg_mbps || 0 }} Mbps</el-descriptions-item>
-              <el-descriptions-item label="当前上行">{{ runtimeStatus?.bandwidth?.outbound_avg_mbps || 0 }} Mbps</el-descriptions-item>
-              <el-descriptions-item label="下行配额">{{ quotaText(selfQuota?.max_bandwidth_down) }}</el-descriptions-item>
-              <el-descriptions-item label="上行配额">{{ quotaText(selfQuota?.max_bandwidth_up) }}</el-descriptions-item>
-            </el-descriptions>
-            <div class="bandwidth-actions">
-              <el-button icon="Refresh" @click="fetchRuntimeStatus" :loading="runtimeLoading">刷新</el-button>
-              <el-button type="primary" icon="DocumentChecked" @click="submitBandwidth" :loading="bandwidthSubmitting">保存速率限制</el-button>
-            </div>
-          </el-form>
-        </div>
-      </el-tab-pane>
-
       <!-- 网口管理 -->
       <el-tab-pane label="网口管理" name="interfaces">
         <div class="multi-nic-panel" v-loading="vpcLoading || multiNicLoading">
@@ -303,11 +255,23 @@
                   <span v-else>-</span>
                 </template>
               </el-table-column>
+              <el-table-column label="下行速率" width="100" align="center">
+                <template #default="{ row }">
+                  <span v-if="(row.binding?.bandwidth_inbound_avg || 0) > 0">{{ row.binding?.bandwidth_inbound_avg || 0 }} Mbps</span>
+                  <span v-else style="color: var(--el-text-color-placeholder);">未限制</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="上行速率" width="100" align="center">
+                <template #default="{ row }">
+                  <span v-if="(row.binding?.bandwidth_outbound_avg || 0) > 0">{{ row.binding?.bandwidth_outbound_avg || 0 }} Mbps</span>
+                  <span v-else style="color: var(--el-text-color-placeholder);">未限制</span>
+                </template>
+              </el-table-column>
               <el-table-column v-if="isAdmin" label="操作" width="150" align="center">
                 <template #default="{ row }">
                   <el-button type="primary" size="small" link @click="handleEditInterface(row)">编辑</el-button>
                   <el-popconfirm
-                    :title="(row.binding?.interface_order ?? 0) === 0 ? '删除主网口后，虚拟机网络将不可用。确定要删除吗？' : '确定要删除此网口吗？删除后虚拟机内对应网卡将不可用。'"
+                    title="确定要删除此网口吗？删除后虚拟机内对应网卡将不可用。"
                     placement="top"
                     @confirm="handleRemoveNic(row)"
                   >
@@ -320,30 +284,6 @@
             </el-table>
           </div>
 
-          <!-- 静态 IP（VPC 模式下）-->
-          <div v-if="!isLightweight && !currentSwitchIsBridge" class="vpc-static-ip" style="margin-top: 14px;">
-            <div class="vpc-static-ip-header">
-              <h4>静态 IP</h4>
-              <el-button type="primary" size="small" plain :disabled="!vpcInfo?.binding || staticIPDisabled" @click="handleBindIP">绑定 IP</el-button>
-            </div>
-            <el-alert
-              v-if="vpcInfo?.binding"
-              class="vpc-static-ip-tip"
-              type="info"
-              show-icon
-              :closable="false"
-              :title="currentSwitchIsBridge ? '桥接直通交换机不使用面板 DHCP，静态 IP 请在虚拟机系统或上级路由器中配置。' : 'VPC 静态 IP 会绑定到当前交换机的 DHCP，运行中的虚拟机可能需要重新获取 DHCP 或重启后生效。'"
-            />
-            <el-table :data="currentVmBindings" border size="small" v-loading="ipLoading">
-              <el-table-column prop="ip" label="IP 地址" />
-              <el-table-column prop="mac" label="MAC 地址" />
-              <el-table-column label="操作" width="80">
-                <template #default="{ row }">
-                  <el-button type="danger" size="small" @click="handleUnbindIP(row)">解绑</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
         </div>
       </el-tab-pane>
 
@@ -716,6 +656,20 @@
           </el-select>
           <div class="form-hint">不选则使用该交换机用户默认安全组</div>
         </el-form-item>
+        <el-divider content-position="left" style="margin: 12px 0;">速率限制</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="下行速率 (Mbps)">
+              <el-input-number v-model="addNicForm.bandwidth_inbound_avg" :min="0" :max="100000" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="上行速率 (Mbps)">
+              <el-input-number v-model="addNicForm.bandwidth_outbound_avg" :min="0" :max="100000" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <div class="form-hint">0 表示不限制，设置后通过 libvirt domiftune 对该网口生效</div>
       </el-form>
       <template #footer>
         <el-button @click="addNicVisible = false">取消</el-button>
@@ -764,6 +718,20 @@
           </el-select>
           <div class="form-hint">不选则使用该交换机用户默认安全组</div>
         </el-form-item>
+        <el-divider content-position="left" style="margin: 12px 0;">速率限制</el-divider>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="下行速率 (Mbps)">
+              <el-input-number v-model="editNicForm.bandwidth_inbound_avg" :min="0" :max="100000" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="上行速率 (Mbps)">
+              <el-input-number v-model="editNicForm.bandwidth_outbound_avg" :min="0" :max="100000" style="width: 100%;" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <div class="form-hint">0 表示不限制，设置后通过 libvirt domiftune 对该网口生效</div>
       </el-form>
       <template #footer>
         <el-button @click="editNicVisible = false">取消</el-button>
@@ -793,7 +761,7 @@ import {
   runPortForwardHTTPProbe,
   getPortForwardWhitelistSummary
 } from '@/api/network'
-import { getVMNetworkStatus, updateVMBandwidth, getVMNetworkDiagnostics, startVMNetworkCapture } from '@/api/vm'
+import { getVMNetworkStatus, getVMNetworkDiagnostics, startVMNetworkCapture } from '@/api/vm'
 import {
   addVPCSecurityGroupRule,
   bindVMVPC,
@@ -856,7 +824,6 @@ const selectedLeaseIP = ref('')
 const runtimeStatus = ref(null)
 const runtimeLoading = ref(false)
 const selfQuota = ref(null)
-const bandwidthSubmitting = ref(false)
 const vpcSwitches = ref([])
 const vpcSecurityGroups = ref([])
 const vpcLoading = ref(false)
@@ -875,7 +842,9 @@ const addNicVisible = ref(false)
 const addNicForm = reactive({
   nic_model: 'virtio',
   switch_id: null,
-  security_group_id: null
+  security_group_id: null,
+  bandwidth_inbound_avg: 0,
+  bandwidth_outbound_avg: 0
 })
 // 编辑网口对话框
 const editNicVisible = ref(false)
@@ -883,7 +852,9 @@ const editNicEditingOrder = ref(-1)
 const editNicForm = reactive({
   nic_model: 'virtio',
   switch_id: null,
-  security_group_id: null
+  security_group_id: null,
+  bandwidth_inbound_avg: 0,
+  bandwidth_outbound_avg: 0
 })
 const editNicSelectedSwitch = computed(() => vpcSwitches.value.find(item => item.id === editNicForm.switch_id) || null)
 const editNicSecurityGroups = computed(() => {
@@ -905,10 +876,6 @@ const securityRuleForm = reactive({
   target_value: '0.0.0.0/0',
   remark: ''
 })
-const bandwidthForm = reactive({
-  bandwidth_inbound_avg: 0,
-  bandwidth_outbound_avg: 0
-})
 const networkDiagnostics = ref(null)
 const diagnosticsLoading = ref(false)
 const captureSubmitting = ref(false)
@@ -928,38 +895,6 @@ const captureForm = reactive({
   duration_seconds: 30,
   max_mb: 64,
   max_packets: 5000
-})
-
-const bandwidthMaxDown = computed(() => {
-  const quota = selfQuota.value?.max_bandwidth_down
-  return !isAdmin.value && quota > 0 ? quota : 100000
-})
-
-const bandwidthMinDown = computed(() => {
-  if (vpcInfo.value?.binding) return 0
-  const quota = selfQuota.value?.max_bandwidth_down
-  return !isAdmin.value && quota > 0 ? 1 : 0
-})
-
-const bandwidthMaxUp = computed(() => {
-  const quota = selfQuota.value?.max_bandwidth_up
-  return !isAdmin.value && quota > 0 ? quota : 100000
-})
-
-const bandwidthMinUp = computed(() => {
-  if (vpcInfo.value?.binding) return 0
-  const quota = selfQuota.value?.max_bandwidth_up
-  return !isAdmin.value && quota > 0 ? 1 : 0
-})
-
-const bandwidthHelpText = computed(() => {
-  if (vpcInfo.value?.binding) {
-    return '当前 VM 已绑定 VPC，外网聚合带宽由交换机控制；这里的 VM 级速率默认为 0，表示不额外限制单台 VM，设置非 0 时只会进一步收紧该 VM。'
-  }
-  if (isAdmin.value) {
-    return '管理员可直接设置该 VM 的平峰速率；下行/上行都设为 0 时会清除该 VM 的单机速率限制。'
-  }
-  return '用户可自行设置当前 VM 的平峰速率，保存时后端会校验单台 VM 与所有 VM 的带宽总和不能超过配额。有限配额方向不能设置为 0。'
 })
 
 const selectedVPCSwitch = computed(() => {
@@ -1102,7 +1037,7 @@ const resolveDefaultTab = () => {
   if (portForwardTabVisible.value) return 'forward'
   if (isLightweight.value || isLightweightVM.value) return 'interfaces'
   if (!currentSwitchIsBridge.value) return 'staticip'
-  return 'bandwidth'
+  return 'interfaces'
 }
 
 const initPortForwardIntro = () => {
@@ -1195,8 +1130,6 @@ const fetchRuntimeStatus = async () => {
   try {
     const res = await getVMNetworkStatus(props.vmName)
     runtimeStatus.value = res.data
-    bandwidthForm.bandwidth_inbound_avg = res.data?.bandwidth?.inbound_avg_mbps || 0
-    bandwidthForm.bandwidth_outbound_avg = res.data?.bandwidth?.outbound_avg_mbps || 0
   } catch (err) {
     console.error(err)
   } finally {
@@ -1640,6 +1573,8 @@ const handleAddNic = async () => {
   addNicForm.nic_model = 'virtio'
   addNicForm.switch_id = vpcSwitches.value.length > 0 ? vpcSwitches.value[0].id : null
   addNicForm.security_group_id = null
+  addNicForm.bandwidth_inbound_avg = 0
+  addNicForm.bandwidth_outbound_avg = 0
   addNicVisible.value = true
 }
 
@@ -1653,7 +1588,9 @@ const submitAddNic = async () => {
     const res = await addVMInterface(props.vmName, {
       nic_model: addNicForm.nic_model,
       switch_id: addNicForm.switch_id,
-      security_group_id: addNicForm.security_group_id || 0
+      security_group_id: addNicForm.security_group_id || 0,
+      bandwidth_inbound_avg: addNicForm.bandwidth_inbound_avg || 0,
+      bandwidth_outbound_avg: addNicForm.bandwidth_outbound_avg || 0
     })
     ElMessage.success(res.message || '网口已添加')
     addNicVisible.value = false
@@ -1744,6 +1681,8 @@ const handleEditInterface = async (row) => {
   editNicForm.nic_model = row.binding?.nic_model || 'virtio'
   editNicForm.switch_id = row.binding?.switch_id || row.switch?.id || null
   editNicForm.security_group_id = row.binding?.security_group_id || row.security_group?.id || null
+  editNicForm.bandwidth_inbound_avg = row.binding?.bandwidth_inbound_avg || 0
+  editNicForm.bandwidth_outbound_avg = row.binding?.bandwidth_outbound_avg || 0
   editNicVisible.value = true
 }
 
@@ -1770,7 +1709,9 @@ const submitEditNic = async () => {
     await updateVMInterface(props.vmName, editNicEditingOrder.value, {
       nic_model: editNicForm.nic_model,
       switch_id: editNicForm.switch_id,
-      security_group_id: editNicForm.security_group_id || 0
+      security_group_id: editNicForm.security_group_id || 0,
+      bandwidth_inbound_avg: editNicForm.bandwidth_inbound_avg || 0,
+      bandwidth_outbound_avg: editNicForm.bandwidth_outbound_avg || 0
     })
     ElMessage.success('网口已更新')
     editNicVisible.value = false
@@ -1866,22 +1807,6 @@ const switchOptionLabel = (item) => {
 const groupOptionLabel = (item) => {
   const prefix = isAdmin.value && item.username ? `${item.username} / ` : ''
   return item.is_default ? `${prefix}${item.name}（默认）` : `${prefix}${item.name}`
-}
-
-const submitBandwidth = async () => {
-  bandwidthSubmitting.value = true
-  try {
-    await updateVMBandwidth(props.vmName, {
-      bandwidth_inbound_avg: bandwidthForm.bandwidth_inbound_avg,
-      bandwidth_outbound_avg: bandwidthForm.bandwidth_outbound_avg
-    })
-    ElMessage.success('速率限制已更新')
-    await fetchRuntimeStatus()
-  } catch (err) {
-    console.error(err)
-  } finally {
-    bandwidthSubmitting.value = false
-  }
 }
 
 watch(() => props.vmName, (newVal) => {

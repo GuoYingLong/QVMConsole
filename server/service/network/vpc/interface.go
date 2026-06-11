@@ -43,6 +43,13 @@ func AddVMInterface(vmName string, req AddVMInterfaceRequest) (*VMInterfaceInfo,
 			}
 		}
 		if switchOwner == "" {
+			// 回退：从 VM 缓存表获取归属用户
+			var cache model.VMCache
+			if err := model.DB.Where("name = ?", vmName).First(&cache).Error; err == nil && cache.OwnerUsername != "" {
+				switchOwner = cache.OwnerUsername
+			}
+		}
+		if switchOwner == "" {
 			return nil, fmt.Errorf("无法识别虚拟机归属用户")
 		}
 	}
@@ -112,15 +119,24 @@ func AddVMInterface(vmName string, req AddVMInterfaceRequest) (*VMInterfaceInfo,
 
 	// 创建 VPC 绑定记录
 	binding := model.VPCVMBinding{
-		VMName:          vmName,
-		Username:        switchOwner,
-		SwitchID:        req.SwitchID,
-		SecurityGroupID: securityGroupID,
-		InterfaceOrder:  nextOrder,
-		NicModel:        nicModel,
+		VMName:               vmName,
+		Username:             switchOwner,
+		SwitchID:             req.SwitchID,
+		SecurityGroupID:      securityGroupID,
+		InterfaceOrder:       nextOrder,
+		NicModel:             nicModel,
+		BandwidthInboundAvg:  req.BandwidthInboundAvg,
+		BandwidthOutboundAvg: req.BandwidthOutboundAvg,
 	}
 	if err := model.DB.Create(&binding).Error; err != nil {
 		return nil, fmt.Errorf("创建网口绑定记录失败: %w", err)
+	}
+
+	// 应用带宽设置到该网口
+	if req.BandwidthInboundAvg > 0 || req.BandwidthOutboundAvg > 0 {
+		if err := applyInterfaceBandwidth(vmName, nextOrder, req.BandwidthInboundAvg, req.BandwidthOutboundAvg); err != nil {
+			logger.App.Warn("为新网口应用带宽限制失败", "vm", vmName, "order", nextOrder, "error", err)
+		}
 	}
 
 	// 应用新网口的 VPC 运行态（只处理新接口，不影响已有接口）
@@ -167,6 +183,19 @@ func UpdateVMInterface(vmName string, interfaceOrder int, req AddVMInterfaceRequ
 	if sw.IsSystem {
 		switchOwner = HookFindVMOwner(vmName)
 		if switchOwner == "" {
+			// 回退：从已有 VPC 绑定记录中获取用户名
+			if binding.Username != "" {
+				switchOwner = binding.Username
+			}
+		}
+		if switchOwner == "" {
+			// 回退：从 VM 缓存表获取归属用户
+			var cache model.VMCache
+			if err := model.DB.Where("name = ?", vmName).First(&cache).Error; err == nil && cache.OwnerUsername != "" {
+				switchOwner = cache.OwnerUsername
+			}
+		}
+		if switchOwner == "" {
 			return fmt.Errorf("无法识别虚拟机归属用户")
 		}
 	}
@@ -205,8 +234,22 @@ func UpdateVMInterface(vmName string, interfaceOrder int, req AddVMInterfaceRequ
 	binding.SwitchID = req.SwitchID
 	binding.SecurityGroupID = securityGroupID
 	binding.NicModel = nicModel
+	binding.BandwidthInboundAvg = req.BandwidthInboundAvg
+	binding.BandwidthOutboundAvg = req.BandwidthOutboundAvg
 	if err := model.DB.Save(&binding).Error; err != nil {
 		return fmt.Errorf("更新网口绑定记录失败: %w", err)
+	}
+
+	// 应用带宽设置到该网口
+	if req.BandwidthInboundAvg > 0 || req.BandwidthOutboundAvg > 0 {
+		if err := applyInterfaceBandwidth(vmName, interfaceOrder, req.BandwidthInboundAvg, req.BandwidthOutboundAvg); err != nil {
+			logger.App.Warn("为网口应用带宽限制失败", "vm", vmName, "order", interfaceOrder, "error", err)
+		}
+	} else {
+		// 带宽设为 0 时清除该网口限制
+		if err := clearInterfaceBandwidth(vmName, interfaceOrder); err != nil {
+			logger.App.Warn("清除网口带宽限制失败", "vm", vmName, "order", interfaceOrder, "error", err)
+		}
 	}
 
 	// 如果交换机改变了，需要更新 VM 的 XML 配置（仅主网口 interface_order==0 支持）
@@ -264,10 +307,6 @@ func RemoveVMInterface(vmName string, interfaceOrder int) error {
 	vmName = strings.TrimSpace(vmName)
 	if vmName == "" {
 		return fmt.Errorf("虚拟机名称不能为空")
-	}
-
-	if interfaceOrder == 0 {
-		return fmt.Errorf("不能删除主网口（接口序号 0），请先确保有其他网口存在或直接删除虚拟机")
 	}
 
 	var binding model.VPCVMBinding
@@ -403,4 +442,74 @@ func ListVMInterfaces(vmName string) ([]VMInterfaceInfo, error) {
 		result = append(result, info)
 	}
 	return result, nil
+}
+
+// applyInterfaceBandwidth 对指定网口应用速率限制（通过 virsh domiftune）
+func applyInterfaceBandwidth(vmName string, interfaceOrder int, inboundAvgMbps, outboundAvgMbps int) error {
+	mac := HookGetVMMACByOrder(vmName, interfaceOrder)
+	if mac == "" {
+		return fmt.Errorf("无法获取网口 %d 的 MAC 地址", interfaceOrder)
+	}
+
+	inAvgKB := inboundAvgMbps * 125
+	outAvgKB := outboundAvgMbps * 125
+
+	// 尝试通过 libvirt RPC 设置持久化配置
+	state := strings.TrimSpace(utils.ExecCommand("virsh", "domstate", vmName).Stdout)
+	if state == "running" {
+		// 运行态：先设置 --config 持久化，再设置 --live 实时生效
+		configResult := utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", fmt.Sprintf("%d,%d,%d", inAvgKB, inAvgKB, inAvgKB*30),
+			"--outbound", fmt.Sprintf("%d,%d,%d", outAvgKB, outAvgKB, outAvgKB*30),
+			"--config")
+		if configResult.Error != nil {
+			return fmt.Errorf("domiftune --config 失败: %s", strings.TrimSpace(configResult.Stderr))
+		}
+		liveResult := utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", fmt.Sprintf("%d,%d,%d", inAvgKB, inAvgKB, inAvgKB*30),
+			"--outbound", fmt.Sprintf("%d,%d,%d", outAvgKB, outAvgKB, outAvgKB*30),
+			"--live")
+		if liveResult.Error != nil {
+			// live 失败只 warn，不影响 config 已写入
+			logger.App.Warn("设置网口实时带宽失败（持久化已生效）", "vm", vmName, "order", interfaceOrder, "error", strings.TrimSpace(liveResult.Stderr))
+		}
+	} else {
+		// 关机态：只设置 --config
+		configResult := utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", fmt.Sprintf("%d,%d,%d", inAvgKB, inAvgKB, inAvgKB*30),
+			"--outbound", fmt.Sprintf("%d,%d,%d", outAvgKB, outAvgKB, outAvgKB*30),
+			"--config")
+		if configResult.Error != nil {
+			return fmt.Errorf("domiftune --config 失败: %s", strings.TrimSpace(configResult.Stderr))
+		}
+	}
+
+	return nil
+}
+
+// clearInterfaceBandwidth 清除指定网口的速率限制
+func clearInterfaceBandwidth(vmName string, interfaceOrder int) error {
+	mac := HookGetVMMACByOrder(vmName, interfaceOrder)
+	if mac == "" {
+		return fmt.Errorf("无法获取网口 %d 的 MAC 地址", interfaceOrder)
+	}
+
+	state := strings.TrimSpace(utils.ExecCommand("virsh", "domstate", vmName).Stdout)
+	if state == "running" {
+		utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", "0,0,0",
+			"--outbound", "0,0,0",
+			"--config")
+		utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", "0,0,0",
+			"--outbound", "0,0,0",
+			"--live")
+	} else {
+		utils.ExecCommand("virsh", "domiftune", vmName, mac,
+			"--inbound", "0,0,0",
+			"--outbound", "0,0,0",
+			"--config")
+	}
+
+	return nil
 }

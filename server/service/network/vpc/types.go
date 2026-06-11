@@ -73,9 +73,11 @@ type VPCBindingInfo struct {
 
 // AddVMInterfaceRequest 添加虚拟机网口的请求参数
 type AddVMInterfaceRequest struct {
-	SwitchID        uint   `json:"switch_id"`
-	SecurityGroupID uint   `json:"security_group_id"`
-	NicModel        string `json:"nic_model"`
+	SwitchID             uint   `json:"switch_id"`
+	SecurityGroupID      uint   `json:"security_group_id"`
+	NicModel             string `json:"nic_model"`
+	BandwidthInboundAvg  int    `json:"bandwidth_inbound_avg"`
+	BandwidthOutboundAvg int    `json:"bandwidth_outbound_avg"`
 }
 
 // VMInterfaceInfo 网口信息
