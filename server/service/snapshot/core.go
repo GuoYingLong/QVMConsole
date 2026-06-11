@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	"kvm_console/logger"
 	"kvm_console/utils"
@@ -170,7 +171,8 @@ func CreateSnapshotWithOptions(vmName, snapName, description string, includeMemo
 				}
 
 				// 暂停后创建快照（不加 --disk-only，关机/暂停状态下默认创建内部快照）。
-				result := utils.ExecCommand("virsh", args...)
+				// 内存快照可能耗时较长（取决于虚拟机内存大小），使用 30 分钟超时。
+				result := utils.ExecCommandWithTimeout("virsh", 30*time.Minute, args...)
 
 				// 无论成功失败，都恢复 VM 运行。
 				logger.App.Info("恢复虚拟机运行", "vm", vmName)
@@ -180,14 +182,32 @@ func CreateSnapshotWithOptions(vmName, snapName, description string, includeMemo
 				}
 
 				if result.Error != nil {
+					// 即使 virsh 命令报错，也可能快照已创建（如超时后 libvirt 后台继续完成）。
+					if snapshotExists(vmName, snapName) {
+						logger.App.Info("virsh 命令失败但快照已存在（可能因超时杀进程但后台任务已完成），视为创建成功",
+							"vm", vmName, "snapshot", snapName, "virsh_error", result.Error)
+						return nil
+					}
 					return formatSnapshotCreateError(result.Stderr)
 				}
 			} else {
 				// 实验模式：不主动 suspend，交给 libvirt/QEMU 自行处理运行中内存快照。
-				// 该模式能减少面板主动暂停时间，但不同宿主机/libvirt 版本的行为可能不同。
-				logger.App.Info("不主动暂停虚拟机，直接创建内存快照", "vm", vmName)
-				result := utils.ExecCommand("virsh", args...)
+				// 注意：即使是"不主动暂停"模式，libvirt/QEMU 在保存内存状态时仍会
+				// 将 VM 置于 paused (saving) 状态，这不是面板行为，而是 QEMU savevm 的固有行为。
+				// 该模式可能缩短面板层面的暂停窗口，但不同宿主机/libvirt 版本的行为可能不同。
+				// 内存快照可能耗时较长（取决于虚拟机内存大小），使用 30 分钟超时。
+				logger.App.Info("不主动暂停虚拟机，由 libvirt/QEMU 自行管理内存快照创建", "vm", vmName)
+				result := utils.ExecCommandWithTimeout("virsh", 30*time.Minute, args...)
 				if result.Error != nil {
+					// 即使 virsh 命令报错，也可能快照已创建（如超时后 libvirt 后台继续完成）。
+					// 检查快照是否实际已存在。
+					if snapshotExists(vmName, snapName) {
+						logger.App.Info("virsh 命令失败但快照已存在（可能因超时杀进程但后台任务已完成），视为创建成功",
+							"vm", vmName, "snapshot", snapName, "virsh_error", result.Error)
+						// 如果 VM 仍处于 paused (saving) 状态，尝试恢复
+						ensureVMRunning(vmName)
+						return nil
+					}
 					return formatSnapshotCreateError(result.Stderr)
 				}
 			}
@@ -198,6 +218,12 @@ func CreateSnapshotWithOptions(vmName, snapName, description string, includeMemo
 			args = append(args, "--disk-only")
 			result := utils.ExecCommand("virsh", args...)
 			if result.Error != nil {
+				// 即使 virsh 命令报错，也可能快照已创建（如超时后 libvirt 后台继续完成）。
+				if snapshotExists(vmName, snapName) {
+					logger.App.Info("virsh 命令失败但快照已存在（可能因超时杀进程但后台任务已完成），视为创建成功",
+						"vm", vmName, "snapshot", snapName, "virsh_error", result.Error)
+					return nil
+				}
 				return formatSnapshotCreateError(result.Stderr)
 			}
 
@@ -427,4 +453,35 @@ func deleteSnapshotMetadataOnly(vmName, snapName, reason string) error {
 		return fmt.Errorf("删除快照元数据失败: %s", result.Stderr)
 	}
 	return nil
+}
+
+// ensureVMRunning 检查虚拟机状态，如果处于 paused 状态则尝试恢复运行。
+// 用于内存快照创建后（尤其是超时恢复场景），确保虚拟机不会停留在 paused 状态。
+func ensureVMRunning(vmName string) {
+	stateResult := utils.ExecCommand("virsh", "domstate", vmName)
+	if stateResult.Error != nil {
+		logger.App.Warn("ensureVMRunning: 获取虚拟机状态失败", "vm", vmName, "error", stateResult.Error)
+		return
+	}
+	state := strings.TrimSpace(stateResult.Stdout)
+	// paused (saving) 或普通 paused 状态都尝试恢复
+	if state == "paused" || strings.HasPrefix(state, "paused") {
+		logger.App.Info("虚拟机处于暂停状态，尝试恢复运行", "vm", vmName, "state", state)
+		// 等待 libvirt snapshot job 释放锁后重试
+		for i := 0; i < 12; i++ {
+			time.Sleep(5 * time.Second)
+			resumeResult := utils.ExecCommand("virsh", "resume", vmName)
+			if resumeResult.Error == nil {
+				logger.App.Info("虚拟机已恢复运行", "vm", vmName)
+				return
+			}
+			if strings.Contains(resumeResult.Stderr, "cannot acquire state change lock") {
+				logger.App.Info("libvirt 锁仍被占用，5 秒后重试", "vm", vmName)
+				continue
+			}
+			logger.App.Warn("恢复虚拟机运行失败", "vm", vmName, "stderr", resumeResult.Stderr)
+			return
+		}
+		logger.App.Warn("恢复虚拟机运行超时（libvirt 锁持续被占用）", "vm", vmName)
+	}
 }

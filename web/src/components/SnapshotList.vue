@@ -41,17 +41,26 @@
           <el-checkbox v-model="form.include_memory">创建快照时保存虚拟机内存状态</el-checkbox>
           <div class="el-form-item__help" style="color: #909399; font-size: 12px; line-height: 1.4; margin-top: 4px;">
             勾选后将创建包含内存的内部快照，恢复时虚拟机将回到运行状态。<br/>
-            不勾选则创建仅磁盘的外部快照。
+            不勾选则创建仅磁盘的外部快照。<br/>
+            <span style="color: #E6A23C;">⚠ 内存快照耗时取决于虚拟机内存大小，大内存虚拟机可能需要数分钟，请耐心等待。</span>
           </div>
         </el-form-item>
         <el-form-item label="创建方式" v-if="vmIsRunning && form.include_memory">
           <el-radio-group v-model="form.pause_for_memory_snapshot">
             <el-radio :value="true">暂停后创建（推荐）</el-radio>
-            <el-radio :value="false">直接创建（实验）</el-radio>
+            <el-radio :value="false">不主动暂停（实验）</el-radio>
           </el-radio-group>
           <div class="el-form-item__help" style="color: #909399; font-size: 12px; line-height: 1.4; margin-top: 4px;">
-            推荐方式会先暂停虚拟机，快照写入完成后恢复运行，一致性更稳但期间业务会停顿。<br/>
-            实验方式不会主动暂停虚拟机，具体是否短暂停顿取决于 libvirt/QEMU，可能失败或一致性更差。
+            <template v-if="form.pause_for_memory_snapshot">
+              面板会先暂停虚拟机，快照写入完成后自动恢复运行，一致性更稳但期间业务会停顿。<br/>
+              整个过程约需数秒至数分钟，取决于虚拟机内存大小。
+            </template>
+            <template v-else>
+              面板不主动暂停虚拟机，由 libvirt/QEMU 自行管理快照创建。<br/>
+              <span style="color: #E6A23C;">⚠ 注意：QEMU 保存内存状态时，虚拟机仍会自动进入 paused (saving) 状态，
+              这不是面板行为，而是虚拟化层的固有机制。该模式仅减少面板层面的暂停窗口，
+              但不能避免虚拟机暂停。</span>
+            </template>
           </div>
         </el-form-item>
       </el-form>

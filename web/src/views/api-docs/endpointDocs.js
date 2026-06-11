@@ -256,7 +256,7 @@ export const endpointGroups = [
       }),
       ep('GET', '/vm/:name/snapshots', '获取快照列表', { pathParams: ['name'], notes: [vmAccess] }),
       ep('DELETE', '/vm/:name/snapshots', '删除全部快照', { pathParams: ['name'], notes: [vmAccess, '按快照树从叶子节点开始删除；外部快照会尽量合并并保留当前状态；历史内部快照若已不在当前活动磁盘链，会仅清理 libvirt 元数据；完成后会清理不再被引用的 .snap_* / .snap_restore_* 残留文件。'], highRisk: 'delete_snapshot' }),
-      ep('POST', '/vm/:name/snapshot', '创建快照', { pathParams: ['name'], body: 'JSON: description, include_memory, pause_for_memory_snapshot, auto_fix_nvram, name(可选)', notes: [vmAccess, '未传 name 时系统自动生成快照名称；显式名称仅支持英文、数字、下划线、点和短横线，最长 64 个字符。', '运行中创建包含内存的快照时，pause_for_memory_snapshot 默认为 true，会先暂停虚拟机并在快照完成后恢复运行；传 false 则不主动暂停，具体行为取决于 libvirt/QEMU。', '运行中 VM 挂载 9p/VirtFS 时不支持包含内存状态的内部快照。'] }),
+      ep('POST', '/vm/:name/snapshot', '创建快照', { pathParams: ['name'], body: 'JSON: description, include_memory, pause_for_memory_snapshot, auto_fix_nvram, name(可选)', notes: [vmAccess, '未传 name 时系统自动生成快照名称；显式名称仅支持英文、数字、下划线、点和短横线，最长 64 个字符。', '运行中创建包含内存的快照时，pause_for_memory_snapshot 默认为 true，面板会先暂停虚拟机并在快照完成后恢复运行；传 false 则不主动暂停，但 QEMU 保存内存时 VM 仍会进入 paused (saving) 状态（非面板行为，是虚拟化层固有机制）。', '内存快照耗时取决于虚拟机内存大小，大内存虚拟机可能需要数分钟。', '运行中 VM 挂载 9p/VirtFS 时不支持包含内存状态的内部快照。'] }),
       ep('POST', '/vm/:name/snapshot/:snap/revert', '恢复快照', { pathParams: ['name', 'snap'], notes: [vmAccess] }),
       ep('DELETE', '/vm/:name/snapshot/:snap', '删除快照', { pathParams: ['name', 'snap'], notes: [vmAccess], highRisk: 'delete_snapshot' }),
       ep('GET', '/vm/:name/vnc/status', '读取 VNC 状态', { pathParams: ['name'], notes: [vmAccess] }),

@@ -110,6 +110,20 @@ func parseSnapshotInfoOutput(output string) snapshotInfoOutput {
 	return info
 }
 
+// snapshotExists 检查指定快照是否存在。
+func snapshotExists(vmName, snapName string) bool {
+	result := utils.ExecCommandQuiet("virsh", "snapshot-list", vmName, "--name")
+	if result.Error != nil {
+		return false
+	}
+	for _, name := range strings.Split(result.Stdout, "\n") {
+		if strings.TrimSpace(name) == snapName {
+			return true
+		}
+	}
+	return false
+}
+
 func parseSnapshotInfoInt(line, prefix string) int {
 	value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 	n, err := strconv.Atoi(value)
