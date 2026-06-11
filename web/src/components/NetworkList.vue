@@ -102,7 +102,7 @@
       </el-tab-pane>
 
       <!-- 静态 IP -->
-      <el-tab-pane v-if="!isLightweight && !currentSwitchIsBridge" label="静态 IP" name="staticip">
+      <el-tab-pane v-if="!isLightweight && hasNatSwitch" label="静态 IP" name="staticip">
         <div style="margin-bottom: 10px;">
           <el-button type="primary" size="small" :disabled="staticIPDisabled" @click="handleBindIP">绑定 IP</el-button>
         </div>
@@ -903,8 +903,16 @@ const selectedVPCSwitch = computed(() => {
 
 const selectedVPCSwitchIsBridge = computed(() => selectedVPCSwitch.value?.bridge_mode === 'bridge')
 const currentSwitchIsBridge = computed(() => vpcInfo.value?.switch?.bridge_mode === 'bridge')
+// 网口列表中是否存在 NAT 交换机：列表非空时以列表为准，列表为空时回退到 VPC 交换机判断
+const hasNatSwitch = computed(() => {
+  const interfaces = multiNicInterfaces.value
+  if (interfaces.length > 0) {
+    return interfaces.some(item => item.switch?.bridge_mode !== 'bridge')
+  }
+  return !currentSwitchIsBridge.value
+})
 const lightweightQuota = computed(() => vpcInfo.value?.lightweight_quota || null)
-const portForwardTabVisible = computed(() => !currentSwitchIsBridge.value && (isAdmin.value || isLightweight.value || isLightweightVM.value || !!selfQuota.value?.enable_port_forward))
+const portForwardTabVisible = computed(() => hasNatSwitch.value && (isAdmin.value || isLightweight.value || isLightweightVM.value || !!selfQuota.value?.enable_port_forward))
 const portForwardQuotaVisible = computed(() => isLightweight.value || isLightweightVM.value || !!selfQuota.value)
 const portForwardUsed = computed(() => (isLightweight.value || isLightweightVM.value) ? (lightweightQuota.value?.used_port_forwards || 0) : (selfQuota.value?.used_port_forwards || 0))
 const portForwardLimit = computed(() => (isLightweight.value || isLightweightVM.value) ? (lightweightQuota.value?.max_port_forwards || 0) : (selfQuota.value?.max_port_forwards || 0))
@@ -1036,7 +1044,7 @@ const portForwardIntroStorageKey = computed(() => {
 const resolveDefaultTab = () => {
   if (portForwardTabVisible.value) return 'forward'
   if (isLightweight.value || isLightweightVM.value) return 'interfaces'
-  if (!currentSwitchIsBridge.value) return 'staticip'
+  if (hasNatSwitch.value) return 'staticip'
   return 'interfaces'
 }
 
@@ -1397,8 +1405,8 @@ watch(() => vpcForm.switch_id, async () => {
 	}
 })
 
-watch(currentSwitchIsBridge, (isBridge) => {
-  if (isBridge && (activeTab.value === 'forward' || activeTab.value === 'staticip')) {
+watch(hasNatSwitch, (hasNat) => {
+  if (!hasNat && (activeTab.value === 'forward' || activeTab.value === 'staticip')) {
     activeTab.value = resolveDefaultTab()
   }
 }, { immediate: true })
