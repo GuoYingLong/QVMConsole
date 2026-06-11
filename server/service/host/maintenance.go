@@ -40,7 +40,7 @@ func EnterMaintenanceMode(ctx context.Context, params *MaintenanceModeTaskParams
 	result.DisabledServices = disabledServices
 	result.Warnings = append(result.Warnings, warnings...)
 
-	HookClearRuntimeCachesForMaintenance()
+	ClearRuntimeCachesForMaintenance()
 	progressFn(100, "维护模式已启用，启动类操作已被阻止")
 	return result, nil
 }

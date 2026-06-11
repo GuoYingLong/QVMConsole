@@ -3,10 +3,10 @@ package service
 // Clone export adapters - export unexported functions/types for clone Deps injection
 import (
 	"context"
-	"time"
 
 	clonepkg "kvm_console/service/clone"
 	ovspkg "kvm_console/service/ovs"
+	vmpkg "kvm_console/service/vm"
 )
 
 // GetTemplateMetaForClone returns a clone-compatible TemplateMeta
@@ -46,29 +46,26 @@ func ListAllVPCStaticHostsForClone() ([]clonepkg.OVSStaticHost, error) {
 	return result, nil
 }
 
-// WaitForVMShutOff exports the unexported waitForVMShutOff for clone Deps
-func WaitForVMShutOff(ctx context.Context, name string, timeout time.Duration) (bool, error) {
-	return waitForVMShutOff(ctx, name, timeout)
-}
+// WaitForVMShutOff is now defined in vm_delegate.go
 
-// GetVMDiskInfoForClone exports getVMDiskInfo result for clone Deps
+// GetVMDiskInfoForClone exports GetVMDiskInfo result for clone Deps
 func GetVMDiskInfoForClone(name string) clonepkg.VMDiskInfoResult {
-	info := getVMDiskInfo(name)
+	info := vmpkg.GetVMDiskInfo(name)
 	return clonepkg.VMDiskInfoResult{
-		Path:   info.path,
-		Device: info.device,
-		Size:   info.size,
+		Path:   info.Path,
+		Device: info.Device,
+		Size:   info.Size,
 	}
 }
 
-// InjectPCIERootPortsExported exports injectPCIERootPorts for clone Deps
+// InjectPCIERootPortsExported exports InjectPCIERootPorts for clone Deps
 func InjectPCIERootPortsExported(xmlContent string, portCount int) string {
-	return injectPCIERootPorts(xmlContent, portCount)
+	return vmpkg.InjectPCIERootPorts(xmlContent, portCount)
 }
 
-// EnsureTemplatePathExported exports ensureTemplatePath for clone Deps
+// EnsureTemplatePathExported exports EnsureTemplatePath for clone Deps
 func EnsureTemplatePathExported(templateName string) (string, error) {
-	return ensureTemplatePath(templateName)
+	return EnsureTemplatePath(templateName)
 }
 
 // PrepareFnOSSystemDiskExpansionExported exports prepareFnOSSystemDiskExpansion for clone Deps

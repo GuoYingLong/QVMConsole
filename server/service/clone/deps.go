@@ -88,6 +88,14 @@ type Deps struct {
 	CleanupLightweightVMResources func(vmName string)
 	DeleteVMSchedules             func(vmName string) error
 
+	// ---- CPU affinity ----
+	ParseCPUAffinity           func(input string) ([]int, error)
+	ValidateCPUAffinity        func(cores []int) error
+	ApplyCPUAffinityToDomainXML func(xmlStr string, vcpu int, cores []int) string
+
+	// ---- Template boot type ----
+	ResolveTemplateBootType    func(templatePath, templateType, bootType string, bootVerified bool, detector func(string) string) (string, bool)
+
 	// ---- VM first boot ----
 	WaitForVMShutOff func(ctx context.Context, name string, timeout time.Duration) (bool, error)
 

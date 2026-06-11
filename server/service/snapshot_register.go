@@ -27,7 +27,7 @@ func init() {
 
 	// Disk / validation hooks
 	snapshot.HookValidateDiskBackingChain = ValidateDiskBackingChain
-	snapshot.HookExtractDomainNVRAMPath = extractDomainNVRAMPath
+	snapshot.HookExtractDomainNVRAMPath = ExtractDomainNVRAMPath
 	snapshot.HookQemuInfoChain = func(path string) ([]snapshot.QemuImgInfo, error) {
 		items, err := QemuInfoChain(path)
 		if err != nil {

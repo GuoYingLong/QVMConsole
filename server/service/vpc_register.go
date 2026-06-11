@@ -6,6 +6,7 @@ import (
 	vpcpkg "kvm_console/service/network/vpc"
 	ovspkg "kvm_console/service/ovs"
 	fwpkg "kvm_console/service/firewall"
+	vmpkg "kvm_console/service/vm"
 )
 
 // vpc_register.go — 将 service 根包函数注册到 vpc 子包的 Hook 变量，
@@ -314,8 +315,8 @@ func init() {
 	vpcpkg.HookGetFirewallVMIP = getFirewallVMIP
 	vpcpkg.HookPublicIPNATPrivateIPsForVM = PublicIPNATPrivateIPsForVM
 	vpcpkg.HookGetVMMACByOrder = GetVMMACByOrder
-	vpcpkg.HookAttachVMInterface = attachVMInterface
-	vpcpkg.HookDetachVMInterface = detachVMInterface
+	vpcpkg.HookAttachVMInterface = vmpkg.AttachVMInterface
+	vpcpkg.HookDetachVMInterface = vmpkg.DetachVMInterface
 
 	// ── Port forward / Firewall hooks ──
 	vpcpkg.HookRemoveVPCPortForwardAcceptRules = RemoveVPCPortForwardAcceptRules

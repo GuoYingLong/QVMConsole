@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"kvm_console/model"
+	vmpkg "kvm_console/service/vm"
 )
 
 var (
@@ -13,5 +14,15 @@ var (
 	HookShutdownVM                       func(name string) error
 	HookDestroyVM                        func(name string) error
 	HookWaitVMShutdownForDisable         func(vmName string, timeout time.Duration) bool
-	HookClearRuntimeCachesForMaintenance func()
+
+	// ── Stats collector hooks (cross-package dependencies) ──
+	HookInitializeVMRuntimeTracker                       func()
+	HookInitializeUserRuntimeQuotaTracker                func()
+	HookInitializeLightweightRuntimeQuotaTracker         func()
+	HookSyncAllUserRuntimeQuotaStatesWithActiveVMs       func(activeVMs map[string]struct{}, observedAt time.Time)
+	HookSyncAllLightweightVMRuntimeQuotaStatesWithActiveVMs func(activeVMs map[string]struct{}, observedAt time.Time)
+	HookSyncVMRuntimeStatesFromHost                      func(observedAt time.Time)
+	HookGetRuntimeActiveVMSetFromHost                    func() (map[string]struct{}, error)
+	HookStartTrafficQuotaChecker                         func()
+	HookGetHostStats                                     func() (*vmpkg.HostStats, error)
 )

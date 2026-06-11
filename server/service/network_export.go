@@ -6,6 +6,7 @@ import (
 
 	netpkg "kvm_console/service/network"
 	ovspkg "kvm_console/service/ovs"
+	probepkg "kvm_console/service/network/probe"
 )
 
 // WriteOVSStaticHostsForNetwork exports writeOVSStaticHosts for network Hook
@@ -17,9 +18,9 @@ func WriteOVSStaticHostsForNetwork(hosts []netpkg.OVSStaticHost) error {
 	return ovspkg.WriteOVSStaticHosts(converted)
 }
 
-// GetPortForwardProbeStateByRuleKey exports getPortForwardProbeStateByRuleKey for network Hook
+// GetPortForwardProbeStateByRuleKey delegates to probe subpackage
 func GetPortForwardProbeStateByRuleKey(ruleKey string) (*model.PortForwardProbeState, error) {
-	return getPortForwardProbeStateByRuleKey(ruleKey)
+	return probepkg.GetPortForwardProbeStateByRuleKey(ruleKey)
 }
 
 // SetPortForwardFirewallExemptionForNetwork wraps SetPortForwardFirewallExemption

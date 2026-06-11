@@ -1016,6 +1016,14 @@ func initCloneDeps() {
 		CleanupLightweightVMResources: service.CleanupLightweightVMResources,
 		DeleteVMSchedules:             service.DeleteVMSchedules,
 
+		// CPU affinity
+		ParseCPUAffinity:            service.ParseCPUAffinity,
+		ValidateCPUAffinity:         service.ValidateCPUAffinity,
+		ApplyCPUAffinityToDomainXML: service.ApplyCPUAffinityToDomainXML,
+
+		// Template boot type
+		ResolveTemplateBootType:     service.ResolveTemplateBootType,
+
 		// VM first boot
 		WaitForVMShutOff: service.WaitForVMShutOff,
 

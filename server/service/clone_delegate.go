@@ -123,6 +123,16 @@ func GenerateRandomCloneHostname() string {
 	return clonepkg.GenerateRandomCloneHostname()
 }
 
+// LinkedCloneVM delegates to clone.LinkedCloneVM
+func LinkedCloneVM(ctx context.Context, params *LinkedCloneParams, progressFn func(int, string)) (*LinkedCloneResult, error) {
+	return clonepkg.LinkedCloneVM(ctx, params, progressFn)
+}
+
+// ParseLinkedCloneParams delegates to clone.ParseLinkedCloneParams
+func ParseLinkedCloneParams(jsonStr string) (*LinkedCloneParams, error) {
+	return clonepkg.ParseLinkedCloneParams(jsonStr)
+}
+
 // NormalizeFnOSDeviceID delegates to clone.NormalizeFnOSDeviceID
 func NormalizeFnOSDeviceID(deviceID string) (string, string, error) {
 	return clonepkg.NormalizeFnOSDeviceID(deviceID)
