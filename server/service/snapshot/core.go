@@ -71,7 +71,7 @@ func ListSnapshots(vmName string) ([]SnapshotInfo, error) {
 	}
 
 	// 获取当前快照
-	currentResult := utils.ExecCommand("virsh", "snapshot-current", vmName, "--name")
+	currentResult := utils.ExecCommandQuiet("virsh", "snapshot-current", vmName, "--name")
 	if currentResult.Error == nil {
 		currentName := strings.TrimSpace(currentResult.Stdout)
 		for i := range snapshots {

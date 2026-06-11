@@ -88,7 +88,7 @@ func GetVMIP(name string, isRunning bool) string {
 
 	if isRunning {
 		// 方式1: Guest Agent（最准确，但需要虚拟机安装 qemu-guest-agent）
-		result := utils.ExecCommand("virsh", "domifaddr", name, "--source", "agent")
+		result := utils.ExecCommandQuiet("virsh", "domifaddr", name, "--source", "agent")
 		if result.Error == nil {
 			allMatches := ipRe.FindAllStringSubmatch(result.Stdout, -1)
 			for _, m := range allMatches {
@@ -99,7 +99,7 @@ func GetVMIP(name string, isRunning bool) string {
 		}
 
 		// 方式2: ARP 表（反映当前实际网络通信状态，比 DHCP 租约更可靠）
-		result = utils.ExecCommand("virsh", "domifaddr", name, "--source", "arp")
+		result = utils.ExecCommandQuiet("virsh", "domifaddr", name, "--source", "arp")
 		if result.Error == nil {
 			allMatches := ipRe.FindAllStringSubmatch(result.Stdout, -1)
 			if len(allMatches) == 1 {
@@ -136,7 +136,7 @@ func GetVMIP(name string, isRunning bool) string {
 		}
 
 		// 方式5: libvirt DHCP 租约
-		result = utils.ExecCommand("virsh", "domifaddr", name, "--source", "lease")
+		result = utils.ExecCommandQuiet("virsh", "domifaddr", name, "--source", "lease")
 		if result.Error == nil {
 			allMatches := ipRe.FindAllStringSubmatch(result.Stdout, -1)
 			if len(allMatches) > 0 {
@@ -145,7 +145,7 @@ func GetVMIP(name string, isRunning bool) string {
 		}
 
 		// 方式6: 默认模式
-		result = utils.ExecCommand("virsh", "domifaddr", name)
+		result = utils.ExecCommandQuiet("virsh", "domifaddr", name)
 		if result.Error == nil {
 			allMatches := ipRe.FindAllStringSubmatch(result.Stdout, -1)
 			if len(allMatches) > 0 {
@@ -196,7 +196,7 @@ func IPInCIDR(ipText, cidrText string) bool {
 }
 
 func getVMIPFromDomifaddrSource(name, source string, ipRe *regexp.Regexp, cidr string, verifyPing bool) string {
-	result := utils.ExecCommand("virsh", "domifaddr", name, "--source", source)
+	result := utils.ExecCommandQuiet("virsh", "domifaddr", name, "--source", source)
 	if result.Error != nil {
 		return ""
 	}
@@ -227,7 +227,7 @@ func getVMIPFromDomifaddrSource(name, source string, ipRe *regexp.Regexp, cidr s
 
 // execDomifaddrARP 通过 virsh domifaddr --source arp 获取 VM IP（不限制 CIDR）
 func execDomifaddrARP(name string, ipRe *regexp.Regexp) string {
-	result := utils.ExecCommand("virsh", "domifaddr", name, "--source", "arp")
+	result := utils.ExecCommandQuiet("virsh", "domifaddr", name, "--source", "arp")
 	if result.Error != nil {
 		return ""
 	}

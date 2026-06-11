@@ -553,7 +553,7 @@ func resolveVMIPByMAC(vmName, mac string, running bool) (string, string) {
 }
 
 func firstVirshDomifaddrIP(vmName, source string) (string, bool) {
-	result := utils.ExecCommand("virsh", "domifaddr", vmName, "--source", source)
+	result := utils.ExecCommandQuiet("virsh", "domifaddr", vmName, "--source", source)
 	if result.Error != nil {
 		return "", false
 	}
@@ -573,7 +573,7 @@ func virshDomifaddrIPByMAC(vmName, source, targetMAC string) (string, bool) {
 	if targetMAC == "" {
 		return "", false
 	}
-	result := utils.ExecCommand("virsh", "domifaddr", vmName, "--source", source)
+	result := utils.ExecCommandQuiet("virsh", "domifaddr", vmName, "--source", source)
 	if result.Error != nil {
 		return "", false
 	}

@@ -276,7 +276,7 @@ func LogNetworkRuntimeChange(message string) {
 
 // EnsureIPTablesRule checks if an iptables rule exists; if not, adds it.
 func EnsureIPTablesRule(checkCmd, addCmd, label string) error {
-	if result := utils.ExecShell(checkCmd); result.Error == nil {
+	if result := utils.ExecShellQuiet(checkCmd); result.Error == nil {
 		return nil
 	}
 	if result := utils.ExecShell(addCmd); result.Error != nil {

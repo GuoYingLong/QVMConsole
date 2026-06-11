@@ -265,7 +265,7 @@ func collectVMIPs(vmName string) []string {
 
 	ipRe := regexp.MustCompile(`(\d+\.\d+\.\d+\.\d+)`)
 	for _, source := range []string{"agent", "arp", "lease"} {
-		addrResult := utils.ExecCommand("virsh", "domifaddr", vmName, "--source", source)
+		addrResult := utils.ExecCommandQuiet("virsh", "domifaddr", vmName, "--source", source)
 		if addrResult.Error == nil {
 			allMatches := ipRe.FindAllStringSubmatch(addrResult.Stdout, -1)
 			for _, m := range allMatches {
