@@ -36,9 +36,27 @@ export function setDefaultStoragePool(id) {
 }
 
 // 格式化并挂载存储池
-export function formatMountStoragePool(id) {
+export function formatMountStoragePool(id, fstype) {
   return request({
     url: `/storage-pool/${encodeURIComponent(id)}/format-mount`,
+    method: 'post',
+    data: { fstype }
+  })
+}
+
+// 创建磁盘分区
+export function createStoragePartition(id, data) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}/create-partition`,
+    method: 'post',
+    data
+  })
+}
+
+// 删除磁盘所有分区
+export function deleteStoragePartitions(id) {
+  return request({
+    url: `/storage-pool/${encodeURIComponent(id)}/delete-partitions`,
     method: 'post'
   })
 }

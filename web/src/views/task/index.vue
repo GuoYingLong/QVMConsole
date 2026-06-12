@@ -40,6 +40,8 @@
           <el-option label="迁移虚拟机" value="vm_migrate" />
           <el-option label="迁移硬盘" value="vm_disk_migrate" />
           <el-option label="格式化存储" value="storage_format" />
+          <el-option label="创建分区" value="storage_create_partition" />
+          <el-option label="删除分区" value="storage_delete_partitions" />
           <el-option label="OVS 修复" value="ovs_repair" />
           <el-option label="网络抓包" value="network_capture" />
           <el-option label="虚拟机定时任务" value="vm_schedule_action" />
@@ -240,6 +242,8 @@ const typeText = (type) => {
     vm_migrate: '迁移虚拟机',
     vm_disk_migrate: '迁移硬盘',
     storage_format: '格式化存储',
+    storage_create_partition: '创建分区',
+    storage_delete_partitions: '删除分区',
     ovs_repair: 'OVS 修复',
     network_capture: '网络抓包',
     vm_schedule_action: '虚拟机定时任务',
@@ -266,6 +270,8 @@ const typeTagType = (type) => {
     vm_migrate: 'warning',
     vm_disk_migrate: 'warning',
     storage_format: 'warning',
+    storage_create_partition: 'warning',
+    storage_delete_partitions: 'danger',
     ovs_repair: 'warning',
     network_capture: 'warning',
     vm_schedule_action: 'primary',

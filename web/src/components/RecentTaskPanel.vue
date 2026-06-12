@@ -231,6 +231,8 @@ const typeText = (type) => {
     lightweight_runtime_quota_shutdown: '轻量云时长关机', delete: '删除虚拟机',
     snapshot: '快照操作', export: '导出虚拟机', import: '导入虚拟机',
     vm_migrate: '迁移虚拟机', vm_disk_migrate: '迁移硬盘', storage_format: '格式化存储',
+    storage_create_partition: '创建分区',
+    storage_delete_partitions: '删除分区',
     ovs_repair: 'OVS 修复', network_capture: '网络抓包', vm_schedule_action: '虚拟机定时任务',
   }
   return map[type] || type
@@ -243,6 +245,8 @@ const typeTagType = (type) => {
     create: '', lightweight_vm_provision: 'primary', lightweight_runtime_quota_shutdown: 'warning',
     delete: 'danger', snapshot: 'info', export: 'success', import: 'primary',
     vm_migrate: 'warning', vm_disk_migrate: 'warning', storage_format: 'warning',
+    storage_create_partition: 'warning',
+    storage_delete_partitions: 'danger',
     ovs_repair: 'warning', network_capture: 'warning', vm_schedule_action: 'primary',
   }
   return map[type] || 'info'

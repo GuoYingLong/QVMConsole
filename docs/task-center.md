@@ -21,6 +21,9 @@
 | `delete` | 删除虚拟机 | 删除虚拟机及其磁盘 |
 | `vm_migrate` | 迁移虚拟机 | 管理员跨节点迁移 VM，目标面板接管，源节点保留副本 |
 | `vm_disk_migrate` | 迁移硬盘 | 管理员将 VM 的指定硬盘迁移到本机目标存储 |
+| `storage_format` | 格式化存储 | 格式化并挂载宿主机硬盘为存储池 |
+| `storage_create_partition` | 创建分区 | 在宿主机硬盘上创建新分区 |
+| `storage_delete_partitions` | 删除分区 | 卸载并删除宿主机硬盘上所有分区，清除分区表 |
 | `runtime_quota_shutdown` | 运行时长配额关机 | 用户总运行时长配额耗尽后自动关闭其全部 VM |
 | `lightweight_runtime_quota_shutdown` | 轻量云时长关机 | 单台轻量云 VM 运行时长配额耗尽后自动关闭该 VM |
 | `enter_maintenance_mode` | 启用维护模式 | 关闭运行中的 VM/容器并停用维护服务 |

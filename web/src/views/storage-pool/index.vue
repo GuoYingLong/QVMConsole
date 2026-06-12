@@ -100,31 +100,42 @@
       >
         <template #header>
           <div class="disk-group-header">
-            <div class="disk-group-info">
-              <div class="disk-group-name-row">
-                <el-icon class="disk-icon" :size="20"><Box /></el-icon>
-                <span class="disk-group-name">{{ disk.display_name }}</span>
-                <el-tag v-if="disk.is_default" size="small" type="success" effect="plain">默认</el-tag>
-                <el-tag v-if="disk.enabled" size="small" type="primary" effect="plain">已启用</el-tag>
-              </div>
-              <div class="disk-group-meta">
-                <span class="mono-text">{{ disk.device_path }}</span>
-                <span class="meta-sep">·</span>
-                <span>{{ typeLabel(disk.type) }}</span>
-                <template v-if="disk.model">
+            <div class="disk-group-left">
+              <el-button
+                class="collapse-toggle-btn"
+                :icon="isDiskCollapsed(disk.id) ? ArrowRight : ArrowDown"
+                text
+                size="small"
+                @click="toggleDiskCollapse(disk.id)"
+              />
+              <div class="disk-group-info">
+                <div class="disk-group-name-row">
+                  <el-icon class="disk-icon" :size="20"><Box /></el-icon>
+                  <span class="disk-group-name">{{ disk.display_name }}</span>
+                  <el-tag v-if="disk.is_default" size="small" type="success" effect="plain">默认</el-tag>
+                  <el-tag v-if="disk.enabled" size="small" type="primary" effect="plain">已启用</el-tag>
+                </div>
+                <div class="disk-group-meta">
+                  <span class="mono-text">{{ disk.device_path }}</span>
                   <span class="meta-sep">·</span>
-                  <span>{{ disk.model }}</span>
-                </template>
-                <template v-if="disk.size > 0">
-                  <span class="meta-sep">·</span>
-                  <span>{{ formatBytes(disk.size) }}</span>
-                </template>
+                  <span>{{ typeLabel(disk.type) }}</span>
+                  <template v-if="disk.model">
+                    <span class="meta-sep">·</span>
+                    <span>{{ disk.model }}</span>
+                  </template>
+                  <template v-if="disk.size > 0">
+                    <span class="meta-sep">·</span>
+                    <span>{{ formatBytes(disk.size) }}</span>
+                  </template>
+                </div>
               </div>
             </div>
             <div class="disk-group-actions">
               <el-button size="small" plain @click="openConfig(disk)">配置</el-button>
               <el-button size="small" plain type="primary" :disabled="!disk.can_use_for_vm || disk.is_default" @click="handleSetDefault(disk)">设为默认</el-button>
               <el-button size="small" plain type="warning" :disabled="!disk.can_format" @click="openFormat(disk)">格式化挂载</el-button>
+              <el-button size="small" plain type="success" :disabled="!disk.can_format && !disk.configured" @click="openCreatePartition(disk)">创建分区</el-button>
+              <el-button size="small" plain type="danger" :disabled="(!disk.children || disk.children.length === 0) && (!disk.mountpoints || disk.mountpoints.length === 0) || disk.system_disk || disk.readonly" @click="openDeletePartitions(disk)">清除磁盘</el-button>
             </div>
           </div>
         </template>
@@ -138,7 +149,8 @@
           class="existing-data-alert"
         />
 
-        <div v-if="disk.children && disk.children.length > 0" class="partition-list">
+        <div v-show="!isDiskCollapsed(disk.id)">
+          <div v-if="disk.children && disk.children.length > 0" class="partition-list">
           <div
             v-for="part in flattenChildren(disk.children)"
             :key="part.id"
@@ -186,8 +198,9 @@
               <el-button size="small" plain type="warning" :disabled="!part.can_format" @click="openFormat(part)">格式化挂载</el-button>
             </div>
           </div>
+          </div>
+          <el-empty v-if="!disk.children || disk.children.length === 0" description="无分区信息" :image-size="60" />
         </div>
-        <el-empty v-if="!disk.children || disk.children.length === 0" description="无分区信息" :image-size="60" />
       </el-card>
       <el-empty v-if="!loading && filteredTableData.length === 0" :description="tableData.length > 0 ? '当前没有符合条件的可用磁盘，可关闭「仅显示可用磁盘」查看全部' : '未发现存储设备'" />
     </div>
@@ -223,9 +236,18 @@
       <el-descriptions :column="1" border size="small">
         <el-descriptions-item label="设备">{{ currentRow?.device_path }}</el-descriptions-item>
         <el-descriptions-item label="容量">{{ formatBytes(currentRow?.size) }}</el-descriptions-item>
-        <el-descriptions-item label="文件系统">{{ currentRow?.fstype || '无' }}</el-descriptions-item>
+        <el-descriptions-item label="当前文件系统">{{ currentRow?.fstype || '无' }}</el-descriptions-item>
         <el-descriptions-item label="挂载目录">/var/lib/kvm-storage/{{ currentRow?.id }}</el-descriptions-item>
       </el-descriptions>
+      <el-form :model="{}" label-width="100px" style="margin-top: 16px;">
+        <el-form-item label="文件系统">
+          <el-select v-model="formatFSType" style="width: 100%;">
+            <el-option label="ext4（推荐，稳定兼容）" value="ext4" />
+            <el-option label="xfs（高性能，大文件优化）" value="xfs" />
+            <el-option label="btrfs（快照/压缩等高级特性）" value="btrfs" />
+          </el-select>
+        </el-form-item>
+      </el-form>
       <div class="confirm-line">
         <el-checkbox v-model="formatConfirmed">我确认要格式化该设备并挂载为虚拟机存储池</el-checkbox>
       </div>
@@ -234,14 +256,72 @@
         <el-button type="danger" :disabled="!formatConfirmed" :loading="formatting" @click="submitFormat">提交任务</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="创建分区" v-model="partitionVisible" width="520px" :close-on-click-modal="false" append-to-body>
+      <el-alert type="warning" :closable="false" show-icon class="danger-alert">
+        <template #title>
+          此操作会在磁盘上创建新分区。若磁盘无分区表将自动创建 GPT 分区表。
+        </template>
+      </el-alert>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="设备">{{ currentRow?.device_path }}</el-descriptions-item>
+        <el-descriptions-item label="容量">{{ formatBytes(currentRow?.size) }}</el-descriptions-item>
+        <el-descriptions-item label="已有分区">{{ currentRow?.children?.length || 0 }} 个</el-descriptions-item>
+      </el-descriptions>
+      <el-form :model="partitionForm" label-width="100px" style="margin-top: 16px;">
+        <el-form-item label="分区大小">
+          <el-input-number
+            v-model="partitionForm.size_gb"
+            :min="0"
+            :max="10000"
+            :step="1"
+            placeholder="留空则使用全部剩余空间"
+            style="width: 100%;"
+          />
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            单位为 GB，输入 0 或留空表示使用磁盘全部剩余空间
+          </div>
+        </el-form-item>
+      </el-form>
+      <div class="confirm-line">
+        <el-checkbox v-model="partitionConfirmed">我确认要在该磁盘上创建新分区</el-checkbox>
+      </div>
+      <template #footer>
+        <el-button @click="partitionVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!partitionConfirmed" :loading="creatingPartition" @click="submitCreatePartition">提交任务</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog :title="deleteDialogTitle" v-model="deletePartitionsVisible" width="520px" :close-on-click-modal="false" append-to-body>
+      <el-alert type="error" :closable="false" show-icon class="danger-alert">
+        <template #title>
+          {{ deleteDialogWarning }}
+        </template>
+      </el-alert>
+      <el-descriptions :column="1" border size="small">
+        <el-descriptions-item label="设备">{{ currentRow?.device_path }}</el-descriptions-item>
+        <el-descriptions-item label="容量">{{ formatBytes(currentRow?.size) }}</el-descriptions-item>
+        <el-descriptions-item v-if="(currentRow?.children?.length || 0) > 0" label="分区数">{{ currentRow?.children?.length }} 个</el-descriptions-item>
+        <el-descriptions-item v-else-if="currentRow?.mountpoints?.length" label="挂载点">{{ currentRow?.mountpoints.join(', ') }}</el-descriptions-item>
+        <el-descriptions-item v-if="currentRow?.fstype" label="文件系统">{{ currentRow.fstype }}</el-descriptions-item>
+      </el-descriptions>
+      <div class="confirm-line">
+        <el-checkbox v-model="deletePartitionsConfirmed">{{ deleteConfirmText }}</el-checkbox>
+      </div>
+      <template #footer>
+        <el-button @click="deletePartitionsVisible = false">取消</el-button>
+        <el-button type="danger" :disabled="!deletePartitionsConfirmed" :loading="deletingPartitions" @click="submitDeletePartitions">提交任务</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { reactive, ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled, Box, Refresh, FolderOpened, Coin, Files, Connection } from '@element-plus/icons-vue'
-import { getStoragePoolList, updateStoragePoolConfig, setDefaultStoragePool, formatMountStoragePool } from '@/api/infra'
+import { InfoFilled, Box, Refresh, FolderOpened, Coin, Files, Connection, ArrowRight, ArrowDown } from '@element-plus/icons-vue'
+import { getStoragePoolList, updateStoragePoolConfig, setDefaultStoragePool, formatMountStoragePool, createStoragePartition, deleteStoragePartitions } from '@/api/infra'
 import * as echarts from 'echarts'
 
 const tableData = ref([])
@@ -252,7 +332,38 @@ const formatVisible = ref(false)
 const savingConfig = ref(false)
 const formatting = ref(false)
 const formatConfirmed = ref(false)
+const formatFSType = ref('ext4')
 const currentRow = ref(null)
+
+// 折叠状态：记录哪些磁盘卡片被折叠
+const collapsedDisks = reactive(new Set())
+
+// 创建分区相关状态
+const partitionVisible = ref(false)
+const creatingPartition = ref(false)
+const partitionConfirmed = ref(false)
+const partitionForm = reactive({
+  size_gb: 0,
+})
+
+// 删除分区相关状态
+const deletePartitionsVisible = ref(false)
+const deletingPartitions = ref(false)
+const deletePartitionsConfirmed = ref(false)
+
+// 清除磁盘弹窗的动态文案
+const hasDeleteChildren = computed(() => currentRow.value?.children?.length > 0)
+const deleteDialogTitle = computed(() => hasDeleteChildren.value ? '删除所有分区' : '清除磁盘挂载')
+const deleteDialogWarning = computed(() =>
+  hasDeleteChildren.value
+    ? '此操作将卸载并删除该磁盘上的所有分区，清除分区表，相关数据将不可恢复！'
+    : '此操作将卸载该磁盘并清除文件系统签名，相关数据将不可恢复！'
+)
+const deleteConfirmText = computed(() =>
+  hasDeleteChildren.value
+    ? '我确认要删除该磁盘上的所有分区'
+    : '我确认要清除该磁盘上的挂载并擦除数据'
+)
 
 const pieChartRef = ref(null)
 const barChartRef = ref(null)
@@ -269,6 +380,13 @@ const fetchData = async () => {
   try {
     const res = await getStoragePoolList()
     tableData.value = res.data || []
+    // 自动折叠没有分区的磁盘
+    collapsedDisks.clear()
+    for (const disk of tableData.value) {
+      if (!disk.children || disk.children.length === 0) {
+        collapsedDisks.add(disk.id)
+      }
+    }
   } finally {
     loading.value = false
   }
@@ -322,6 +440,7 @@ const handleSetDefault = async (row) => {
 const openFormat = (row) => {
   currentRow.value = row
   formatConfirmed.value = false
+  formatFSType.value = 'ext4'
   formatVisible.value = true
 }
 
@@ -329,11 +448,67 @@ const submitFormat = async () => {
   if (!currentRow.value) return
   formatting.value = true
   try {
-    await formatMountStoragePool(currentRow.value.id)
+    await formatMountStoragePool(currentRow.value.id, formatFSType.value)
     ElMessage.success('格式化并挂载任务已提交，请在任务中心查看进度')
     formatVisible.value = false
   } finally {
     formatting.value = false
+  }
+}
+
+// ===== 折叠/展开 =====
+const toggleDiskCollapse = (diskId) => {
+  if (collapsedDisks.has(diskId)) {
+    collapsedDisks.delete(diskId)
+  } else {
+    collapsedDisks.add(diskId)
+  }
+}
+
+const isDiskCollapsed = (diskId) => {
+  return collapsedDisks.has(diskId)
+}
+
+// ===== 创建分区 =====
+const openCreatePartition = (disk) => {
+  currentRow.value = disk
+  partitionForm.size_gb = 0
+  partitionConfirmed.value = false
+  partitionVisible.value = true
+}
+
+const submitCreatePartition = async () => {
+  if (!currentRow.value) return
+  creatingPartition.value = true
+  try {
+    await createStoragePartition(currentRow.value.id, {
+      size_gb: partitionForm.size_gb || 0,
+    })
+    ElMessage.success('创建分区任务已提交，请在任务中心查看进度')
+    partitionVisible.value = false
+  } finally {
+    creatingPartition.value = false
+  }
+}
+
+// ===== 删除所有分区 =====
+const openDeletePartitions = (disk) => {
+  currentRow.value = disk
+  deletePartitionsConfirmed.value = false
+  deletePartitionsVisible.value = true
+}
+
+const submitDeletePartitions = async () => {
+  if (!currentRow.value) return
+  deletingPartitions.value = true
+  try {
+    await deleteStoragePartitions(currentRow.value.id)
+    ElMessage.success('删除分区任务已提交，请在任务中心查看进度')
+    deletePartitionsVisible.value = false
+    // 删除后刷新列表
+    fetchData()
+  } finally {
+    deletingPartitions.value = false
   }
 }
 
@@ -870,6 +1045,25 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
+}
+
+.disk-group-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.collapse-toggle-btn {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 2px;
+  color: var(--el-text-color-secondary);
+}
+
+.collapse-toggle-btn:hover {
+  color: var(--el-color-primary);
 }
 
 .disk-group-info {

@@ -361,6 +361,42 @@ func registerTaskHandlers() {
 	// 宿主机硬盘格式化并挂载任务
 	taskqueue.RegisterHandler(model.TaskTypeStorageFormat, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
 		var params struct {
+			ID     string `json:"id"`
+			FSType string `json:"fstype"`
+		}
+		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
+			return "", fmt.Errorf("解析参数失败: %w", err)
+		}
+		if params.ID == "" {
+			return "", fmt.Errorf("存储池设备 ID 不能为空")
+		}
+		if err := service.FormatAndMountStoragePool(ctx, params.ID, params.FSType, progress); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf(`{"storage_pool_id":"%s"}`, params.ID), nil
+	})
+
+	// 宿主机硬盘创建分区任务
+	taskqueue.RegisterHandler(model.TaskTypeStorageCreatePartition, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
+		var params struct {
+			ID     string `json:"id"`
+			SizeGB int    `json:"size_gb"`
+		}
+		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
+			return "", fmt.Errorf("解析参数失败: %w", err)
+		}
+		if params.ID == "" {
+			return "", fmt.Errorf("存储池设备 ID 不能为空")
+		}
+		if err := service.CreatePartitionOnDisk(ctx, params.ID, params.SizeGB, progress); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf(`{"storage_pool_id":"%s"}`, params.ID), nil
+	})
+
+	// 宿主机硬盘删除所有分区任务
+	taskqueue.RegisterHandler(model.TaskTypeStorageDeletePartitions, func(ctx context.Context, task *model.Task, progress func(int, string)) (string, error) {
+		var params struct {
 			ID string `json:"id"`
 		}
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
@@ -369,7 +405,7 @@ func registerTaskHandlers() {
 		if params.ID == "" {
 			return "", fmt.Errorf("存储池设备 ID 不能为空")
 		}
-		if err := service.FormatAndMountStoragePool(ctx, params.ID, progress); err != nil {
+		if err := service.DeleteAllPartitionsOnDisk(ctx, params.ID, progress); err != nil {
 			return "", err
 		}
 		return fmt.Sprintf(`{"storage_pool_id":"%s"}`, params.ID), nil

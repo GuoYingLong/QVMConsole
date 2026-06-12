@@ -67,7 +67,8 @@ apt-get install -y \
   arp-scan \
   conntrack \
   openssh-client \
-  openssh-server
+  openssh-server \
+  parted
 ```
 
 ## 依赖说明
@@ -158,6 +159,7 @@ apt-get install -y \
 | `setquota` | `quota` | 设置/更新用户文件系统存储配额 |
 | `repquota` | `quota` | 查询用户文件系统配额使用情况 |
 | `lsblk` / `findmnt` / `blkid` / `wipefs` / `mount` / `zramctl` / `mkswap` / `swapon` / `swapoff` | `util-linux` | 宿主机物理硬盘存储池列表、UUID 查询、格式化前清理、挂载；zRAM 设备创建、初始化与启停 |
+| `parted` / `partprobe` | `parted` | 宿主机磁盘分区创建与分区表刷新 |
 | `nft` | `nftables` | 校验、应用、回滚 KVM 网络防火墙规则 |
 | `ufw` | `ufw` | 宿主机防火墙启停、规则增删改查和端口转发外层放通 |
 | `conntrack` | `conntrack` | 连接清理辅助；当前实现优先保障 `ss -K` 可用，安装后便于后续扩展清理 NAT/转发连接 |

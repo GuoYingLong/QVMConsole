@@ -46,8 +46,18 @@ func ResolveVMStorageDir(poolID string, isAdmin bool) (string, string, error) {
 }
 
 // FormatAndMountStoragePool delegates to pool.FormatAndMountStoragePool
-func FormatAndMountStoragePool(ctx context.Context, id string, progress func(int, string)) error {
-	return pool.FormatAndMountStoragePool(ctx, id, progress)
+func FormatAndMountStoragePool(ctx context.Context, id string, fstype string, progress func(int, string)) error {
+	return pool.FormatAndMountStoragePool(ctx, id, fstype, progress)
+}
+
+// CreatePartitionOnDisk delegates to pool.CreatePartitionOnDisk
+func CreatePartitionOnDisk(ctx context.Context, deviceID string, sizeGB int, progress func(int, string)) error {
+	return pool.CreatePartitionOnDisk(ctx, deviceID, sizeGB, progress)
+}
+
+// DeleteAllPartitionsOnDisk delegates to pool.DeleteAllPartitionsOnDisk
+func DeleteAllPartitionsOnDisk(ctx context.Context, deviceID string, progress func(int, string)) error {
+	return pool.DeleteAllPartitionsOnDisk(ctx, deviceID, progress)
 }
 
 // GetAllISOs delegates to pool.GetAllISOs

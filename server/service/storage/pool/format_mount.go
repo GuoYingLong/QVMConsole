@@ -14,7 +14,8 @@ import (
 )
 
 // FormatAndMountStoragePool 格式化指定块设备并挂载为虚拟机存储位置。
-func FormatAndMountStoragePool(ctx context.Context, id string, progress func(int, string)) error {
+// fstype 为空时默认 ext4。
+func FormatAndMountStoragePool(ctx context.Context, id string, fstype string, progress func(int, string)) error {
 	pool, err := GetStoragePool(id)
 	if err != nil {
 		return err
@@ -25,14 +26,20 @@ func FormatAndMountStoragePool(ctx context.Context, id string, progress func(int
 	mountPath := defaultStorageMountPath(id)
 	devicePath := pool.DevicePath
 
+	if fstype == "" {
+		fstype = "ext4"
+	}
+
 	progress(10, "正在清理旧文件系统标记...")
 	utils.ExecCommandContextWithTimeout(ctx, "wipefs", 2*time.Minute, "-a", devicePath)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 
-	progress(30, "正在格式化为 ext4...")
-	mkfs := utils.ExecCommandContextWithTimeout(ctx, "mkfs.ext4", 10*time.Minute, "-F", devicePath)
+	mkfsCmd := "mkfs." + fstype
+	mkfsArgs := buildMkfsArgs(fstype, devicePath)
+	progress(30, fmt.Sprintf("正在格式化为 %s...", fstype))
+	mkfs := utils.ExecCommandContextWithTimeout(ctx, mkfsCmd, 10*time.Minute, mkfsArgs...)
 	if mkfs.Error != nil {
 		return fmt.Errorf("格式化硬盘失败: %s", mkfs.Stderr)
 	}
@@ -48,7 +55,7 @@ func FormatAndMountStoragePool(ctx context.Context, id string, progress func(int
 	if err := os.MkdirAll(mountPath, 0755); err != nil {
 		return fmt.Errorf("创建挂载目录失败: %w", err)
 	}
-	if err := ensureFstabEntry(uuid, mountPath); err != nil {
+	if err := ensureFstabEntry(uuid, mountPath, fstype); err != nil {
 		return err
 	}
 
@@ -82,6 +89,18 @@ func FormatAndMountStoragePool(ctx context.Context, id string, progress func(int
 	return nil
 }
 
+// buildMkfsArgs 根据文件系统类型返回合适的 mkfs 参数。
+func buildMkfsArgs(fstype, devicePath string) []string {
+	switch fstype {
+	case "xfs":
+		return []string{"-f", devicePath}
+	case "btrfs":
+		return []string{"-f", devicePath}
+	default: // ext4, ext3, etc.
+		return []string{"-F", devicePath}
+	}
+}
+
 func ensureVMStorageDir(dir string) error {
 	if strings.TrimSpace(dir) == "" {
 		return fmt.Errorf("虚拟机磁盘目录为空")
@@ -96,12 +115,12 @@ func ensureVMStorageDir(dir string) error {
 	return nil
 }
 
-func ensureFstabEntry(uuid, mountPath string) error {
+func ensureFstabEntry(uuid, mountPath, fstype string) error {
 	data, err := os.ReadFile("/etc/fstab")
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("读取 /etc/fstab 失败: %w", err)
 	}
-	line := fmt.Sprintf("UUID=%s %s ext4 defaults,nofail 0 2", uuid, mountPath)
+	line := fmt.Sprintf("UUID=%s %s %s defaults,nofail 0 2", uuid, mountPath, fstype)
 	var lines []string
 	found := false
 	for _, existing := range strings.Split(string(data), "\n") {

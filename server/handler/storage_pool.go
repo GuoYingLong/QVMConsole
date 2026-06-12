@@ -78,9 +78,19 @@ func FormatMountStoragePool(c *gin.Context) {
 		return
 	}
 	id := c.Param("id")
+	var req struct {
+		FSType string `json:"fstype"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		// 兼容旧版本不带 body 的请求
+		req.FSType = ""
+	}
+	if req.FSType == "" {
+		req.FSType = "ext4"
+	}
 	username, _ := c.Get("username")
 	usernameStr, _ := username.(string)
-	task, err := taskqueue.SubmitWithStruct(model.TaskTypeStorageFormat, gin.H{"id": id}, usernameStr)
+	task, err := taskqueue.SubmitWithStruct(model.TaskTypeStorageFormat, gin.H{"id": id, "fstype": req.FSType}, usernameStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"code":    500,
@@ -91,6 +101,62 @@ func FormatMountStoragePool(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":    200,
 		"message": "格式化并挂载任务已提交",
+		"data":    gin.H{"task_id": task.ID},
+	})
+}
+
+// CreateStoragePartition 提交创建分区任务
+func CreateStoragePartition(c *gin.Context) {
+	if !requireHighRiskVerification(c, "create_storage_partition") {
+		return
+	}
+	id := c.Param("id")
+	var req struct {
+		SizeGB int `json:"size_gb"` // 分区大小(GB)，0 表示使用全部剩余空间
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "参数错误"})
+		return
+	}
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
+	task, err := taskqueue.SubmitWithStruct(model.TaskTypeStorageCreatePartition, gin.H{
+		"id":      id,
+		"size_gb": req.SizeGB,
+	}, usernameStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "提交创建分区任务失败: " + err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "创建分区任务已提交",
+		"data":    gin.H{"task_id": task.ID},
+	})
+}
+
+// DeleteStoragePartitions 提交删除所有分区任务
+func DeleteStoragePartitions(c *gin.Context) {
+	if !requireHighRiskVerification(c, "delete_storage_partitions") {
+		return
+	}
+	id := c.Param("id")
+	username, _ := c.Get("username")
+	usernameStr, _ := username.(string)
+	task, err := taskqueue.SubmitWithStruct(model.TaskTypeStorageDeletePartitions, gin.H{"id": id}, usernameStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": "提交删除分区任务失败: " + err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "删除分区任务已提交",
 		"data":    gin.H{"task_id": task.ID},
 	})
 }

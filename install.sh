@@ -72,6 +72,7 @@ APT_DEPS=(
     "conntrack"
     "openssh-client"
     "openssh-server"
+    "parted"
 )
 
 COMMAND_CHECKS=(
@@ -104,6 +105,8 @@ COMMAND_CHECKS=(
     "wipefs"
     "mount"
     "growpart"
+    "parted"
+    "partprobe"
 )
 
 cleanup_tmp() {
