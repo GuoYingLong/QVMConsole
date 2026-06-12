@@ -389,7 +389,7 @@ func injectLVMTree(pools []HostStoragePoolInfo, vgs []VGInfo, lvs []LVInfo,
 		// 添加 PV 子节点（作为引用节点，不可操作）
 		if pvPaths, ok := vgPVMap[vg.Name]; ok {
 			for _, pvPath := range pvPaths {
-				pvNode := buildPVReferenceNode(pvPath, vg.Name, filteredPools)
+				pvNode := buildPVReferenceNode(pvPath, vg.Name)
 				if pvNode != nil {
 					vgNode.Children = append(vgNode.Children, *pvNode)
 				}
@@ -469,33 +469,17 @@ func buildLVNode(lv LVInfo, vgName string, mounts map[string]findmntInfo,
 }
 
 // buildPVReferenceNode 构建 PV 引用子节点。
-func buildPVReferenceNode(pvPath, vgName string, pools []HostStoragePoolInfo) *HostStoragePoolInfo {
-	// 在现有树中查找该 PV 对应的节点以获取大小等信息
-	for _, pool := range pools {
-		if found := findNodeByDevicePath(pool, pvPath); found != nil {
-			pvNode := HostStoragePoolInfo{
-				ID:           normalizeStorageDeviceID("pv-" + vgName + "-" + filepath.Base(pvPath)),
-				Name:         filepath.Base(pvPath),
-				DisplayName:  filepath.Base(pvPath),
-				DevicePath:   pvPath,
-				Type:         "pv",
-				Size:         found.Size,
-				VGName:       vgName,
-				Readonly:     true, // PV 节点不允许单独操作
-				StatusReason: "已加入卷组 " + vgName,
-			}
-			return &pvNode
-		}
-	}
-	// 如果没找到，创建一个最小节点
+// PV 引用节点仅用于展示层级关系，容量已由 VG/LV 节点体现，因此大小始终为 0。
+func buildPVReferenceNode(pvPath, vgName string) *HostStoragePoolInfo {
 	return &HostStoragePoolInfo{
 		ID:           normalizeStorageDeviceID("pv-" + vgName + "-" + filepath.Base(pvPath)),
 		Name:         filepath.Base(pvPath),
 		DisplayName:  filepath.Base(pvPath),
 		DevicePath:   pvPath,
 		Type:         "pv",
+		Size:         0,
 		VGName:       vgName,
-		Readonly:     true,
+		Readonly:     true, // PV 节点不允许单独操作
 		StatusReason: "已加入卷组 " + vgName,
 	}
 }
@@ -514,7 +498,7 @@ func removeLVNodesFromTree(pools []HostStoragePoolInfo, lvDevicePaths map[string
 	return result
 }
 
-// markPVNodes 标记属于 VG 的 PV 节点。
+// markPVNodes 标记属于 VG 的 PV 节点，并将其容量清零以避免与 VG/LV 重复计算。
 func markPVNodes(pools []HostStoragePoolInfo, pvToVG map[string]string) {
 	for i := range pools {
 		if vgName, ok := pvToVG[pools[i].DevicePath]; ok {
@@ -523,22 +507,14 @@ func markPVNodes(pools []HostStoragePoolInfo, pvToVG map[string]string) {
 			pools[i].CanFormat = false
 			pools[i].CanUseForVM = false
 			pools[i].StatusReason = "已加入卷组 " + vgName
+			// 清零容量：PV 磁盘的容量已由 VG/LV 节点体现，不应重复计入总计
+			pools[i].Size = 0
+			pools[i].Used = 0
+			pools[i].Available = 0
+			pools[i].UsePercent = 0
 		}
 		markPVNodes(pools[i].Children, pvToVG)
 	}
-}
-
-// findNodeByDevicePath 递归查找设备路径对应的节点。
-func findNodeByDevicePath(pool HostStoragePoolInfo, devicePath string) *HostStoragePoolInfo {
-	if pool.DevicePath == devicePath {
-		return &pool
-	}
-	for _, child := range pool.Children {
-		if found := findNodeByDevicePath(child, devicePath); found != nil {
-			return found
-		}
-	}
-	return nil
 }
 
 // hasAnyMountedChild 检查节点是否有已挂载的子节点。

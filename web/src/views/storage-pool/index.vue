@@ -973,7 +973,7 @@ const overviewStats = computed(() => {
     totalSize,
     totalUsed,
     totalAvail,
-    diskCount: tableData.value.length,
+    diskCount: tableData.value.filter(d => d.type === 'disk').length,
     mountedCount: mounted.length,
   }
 })
