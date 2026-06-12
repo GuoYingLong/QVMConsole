@@ -35,8 +35,11 @@ func CreateVPCSwitch(operator, role string, req VPCSwitchRequest) (*model.VPCSwi
 func UpdateVPCSwitch(operator, role string, id uint, req VPCSwitchRequest) (*model.VPCSwitch, error) {
 	return vpcpkg.UpdateVPCSwitch(operator, role, id, req)
 }
-func DeleteVPCSwitch(operator, role string, id uint) error {
-	return vpcpkg.DeleteVPCSwitch(operator, role, id)
+func DeleteVPCSwitch(operator, role string, id uint, force bool) error {
+	return vpcpkg.DeleteVPCSwitch(operator, role, id, force)
+}
+func GetVPCSwitchVMs(operator, role string, id uint) ([]vpcpkg.VMSwitchInfo, error) {
+	return vpcpkg.GetVPCSwitchVMs(operator, role, id)
 }
 func ResetVPCSwitchTraffic(operator, role string, id uint) error {
 	return vpcpkg.ResetVPCSwitchTraffic(operator, role, id)

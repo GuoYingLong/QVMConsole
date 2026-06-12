@@ -16,8 +16,12 @@ export function updateVPCSwitch(id, data) {
   return request({ url: `/vpc/switches/${id}`, method: 'put', data })
 }
 
-export function deleteVPCSwitch(id) {
-  return request({ url: `/vpc/switches/${id}`, method: 'delete' })
+export function deleteVPCSwitch(id, force = false) {
+  return request({ url: `/vpc/switches/${id}`, method: 'delete', params: { force: force ? 'true' : '' } })
+}
+
+export function getVPCSwitchVMs(id) {
+  return request({ url: `/vpc/switches/${id}/vms`, method: 'get' })
 }
 
 export function resetVPCSwitchTraffic(id) {

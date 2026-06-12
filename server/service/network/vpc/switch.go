@@ -218,7 +218,30 @@ func ResetVPCSwitchTraffic(operator, role string, id uint) error {
 	return nil
 }
 
-func DeleteVPCSwitch(operator, role string, id uint) error {
+func GetVPCSwitchVMs(operator, role string, id uint) ([]VMSwitchInfo, error) {
+	var sw model.VPCSwitch
+	if err := model.DB.First(&sw, id).Error; err != nil {
+		return nil, fmt.Errorf("交换机不存在")
+	}
+	if role != "admin" && sw.Username != operator {
+		return nil, fmt.Errorf("无权操作此交换机")
+	}
+	var bindings []model.VPCVMBinding
+	if err := model.DB.Where("switch_id = ?", id).Order("vm_name ASC, interface_order ASC").Find(&bindings).Error; err != nil {
+		return nil, err
+	}
+	result := make([]VMSwitchInfo, len(bindings))
+	for i, b := range bindings {
+		result[i] = VMSwitchInfo{
+			VMName:         b.VMName,
+			Username:       b.Username,
+			InterfaceOrder: b.InterfaceOrder,
+		}
+	}
+	return result, nil
+}
+
+func DeleteVPCSwitch(operator, role string, id uint, force bool) error {
 	var sw model.VPCSwitch
 	if err := model.DB.First(&sw, id).Error; err != nil {
 		return fmt.Errorf("交换机不存在")
@@ -229,11 +252,26 @@ func DeleteVPCSwitch(operator, role string, id uint) error {
 	if role != "admin" && sw.Username != operator {
 		return fmt.Errorf("无权操作此交换机")
 	}
-	var count int64
-	model.DB.Model(&model.VPCVMBinding{}).Where("switch_id = ?", id).Count(&count)
-	if count > 0 {
-		return fmt.Errorf("交换机仍有虚拟机绑定，不能删除")
+	var bindings []model.VPCVMBinding
+	model.DB.Where("switch_id = ?", id).Find(&bindings)
+	if len(bindings) > 0 {
+		if !force {
+			return fmt.Errorf("交换机仍有 %d 台虚拟机绑定，不能删除", len(bindings))
+		}
+		// 强制删除：先移除所有虚拟机的网卡
+		for _, binding := range bindings {
+			if err := HookDetachVMInterface(binding.VMName, binding.InterfaceOrder); err != nil {
+				logger.App.Warn("强制移除虚拟机网卡失败", "vm", binding.VMName, "interface_order", binding.InterfaceOrder, "switch", sw.Name, "error", err)
+			} else {
+				logger.App.Info("已强制移除虚拟机网卡", "vm", binding.VMName, "interface_order", binding.InterfaceOrder, "switch", sw.Name)
+			}
+		}
+		// 删除所有绑定记录
+		if err := model.DB.Where("switch_id = ?", id).Delete(&model.VPCVMBinding{}).Error; err != nil {
+			return fmt.Errorf("删除虚拟机绑定记录失败: %w", err)
+		}
 	}
+	_ = ApplyVPCACLRules()
 	if err := model.DB.Delete(&sw).Error; err != nil {
 		return err
 	}

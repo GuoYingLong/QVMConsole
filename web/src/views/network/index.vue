@@ -422,8 +422,9 @@
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="280" fixed="right">
+              <el-table-column label="操作" width="360" fixed="right">
                 <template #default="{ row }">
+                  <el-button size="small" plain @click="openSwitchVMsDialog(row)">查看虚拟机</el-button>
                   <el-button size="small" plain @click="openSwitchDialog(row)" :disabled="row.is_system">编辑</el-button>
                   <el-button v-if="isAdmin" size="small" plain type="warning" @click="handleResetSwitchTraffic(row)" :disabled="row.is_system">重置流量</el-button>
                   <el-button size="small" plain type="danger" @click="handleDeleteSwitch(row)" :disabled="row.is_system">删除</el-button>
@@ -493,6 +494,7 @@
                   </div>
                 </div>
                 <div class="switch-card-actions">
+                  <el-button size="small" plain @click="openSwitchVMsDialog(row)">查看虚拟机</el-button>
                   <el-button size="small" plain @click="openSwitchDialog(row)" :disabled="row.is_system">编辑</el-button>
                   <el-button v-if="isAdmin" size="small" plain type="warning" @click="handleResetSwitchTraffic(row)" :disabled="row.is_system">重置流量</el-button>
                   <el-button size="small" plain type="danger" @click="handleDeleteSwitch(row)" :disabled="row.is_system">删除</el-button>
@@ -945,6 +947,32 @@
       </template>
     </el-dialog>
 
+    <!-- 交换机虚拟机列表对话框 -->
+    <el-dialog
+      v-model="switchVMDialogVisible"
+      :title="'交换机 - ' + (selectedSwitchForVMs?.name || '') + ' - 虚拟机列表'"
+      width="600px"
+      append-to-body
+      destroy-on-close
+      class="modern-dialog"
+    >
+      <div v-if="switchVMs.length === 0 && !switchVMLoading" style="text-align: center; padding: 40px 0; color: #909399;">
+        <el-empty description="该交换机下暂无虚拟机绑定" />
+      </div>
+      <el-table v-else :data="switchVMs" border v-loading="switchVMLoading" size="small" max-height="400">
+        <el-table-column prop="vm_name" label="虚拟机名称" min-width="200" />
+        <el-table-column prop="username" label="所属用户" width="140" />
+        <el-table-column prop="interface_order" label="网口序号" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" round>#{{ row.interface_order + 1 }}</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="switchVMDialogVisible = false" size="large">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑端口转发对话框 -->
     <el-dialog
       v-model="forwardDialogVisible"
@@ -1225,6 +1253,7 @@ import {
   deleteVPCSecurityGroup,
   deleteVPCSecurityGroupRule,
   deleteVPCSwitch,
+  getVPCSwitchVMs,
   getVPCQuota,
   getVPCSecurityGroups,
   getVPCSwitches,
@@ -1302,6 +1331,11 @@ const switchForm = reactive({ username: '', name: '', bridge_name: 'br-ovs', bri
 
 const bridgeDialogVisible = ref(false)
 const bridgeForm = reactive({ name: '', mode: 'bridge', uplink_if: '', migrate_host_ip: true })
+
+const switchVMDialogVisible = ref(false)
+const switchVMs = ref([])
+const switchVMLoading = ref(false)
+const selectedSwitchForVMs = ref(null)
 
 const groupDialogVisible = ref(false)
 const editingGroup = ref(null)
@@ -1776,10 +1810,56 @@ async function submitSwitch() {
 }
 
 async function handleDeleteSwitch(row) {
-  await ElMessageBox.confirm(`确定删除交换机 ${row.name}？`, '删除交换机', { type: 'warning' })
-  await deleteVPCSwitch(row.id)
+  // 先查询该交换机下的虚拟机
+  let vms = []
+  try {
+    const res = await getVPCSwitchVMs(row.id)
+    vms = res.data || []
+  } catch (e) {
+    // 查询失败也继续，允许尝试删除
+  }
+
+  if (vms.length > 0) {
+    // 有虚拟机绑定，显示二次确认弹窗
+    const vmNames = vms.map(v => v.vm_name).join('、')
+    try {
+      await ElMessageBox.confirm(
+        `交换机「${row.name}」下仍有 ${vms.length} 台虚拟机绑定：${vmNames}。强制删除将会移除这些虚拟机的网卡，确定继续？`,
+        '强制删除交换机',
+        {
+          confirmButtonText: '强制删除',
+          cancelButtonText: '取消',
+          type: 'error',
+          confirmButtonClass: 'el-button--danger'
+        }
+      )
+    } catch {
+      return // 用户取消
+    }
+    // 二次确认通过，强制删除
+    await deleteVPCSwitch(row.id, true)
+  } else {
+    // 没有虚拟机绑定，普通确认删除
+    await ElMessageBox.confirm(`确定删除交换机 ${row.name}？`, '删除交换机', { type: 'warning' })
+    await deleteVPCSwitch(row.id, false)
+  }
   ElMessage.success('交换机已删除')
   await loadSwitches()
+}
+
+async function openSwitchVMsDialog(row) {
+  selectedSwitchForVMs.value = row
+  switchVMDialogVisible.value = true
+  switchVMLoading.value = true
+  try {
+    const res = await getVPCSwitchVMs(row.id)
+    switchVMs.value = res.data || []
+  } catch (e) {
+    ElMessage.error('查询虚拟机列表失败')
+    switchVMs.value = []
+  } finally {
+    switchVMLoading.value = false
+  }
 }
 
 async function handleResetSwitchTraffic(row) {

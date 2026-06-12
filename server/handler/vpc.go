@@ -72,10 +72,22 @@ func UpdateVPCSwitch(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "交换机已更新", "data": sw})
 }
 
+func GetVPCSwitchVMs(c *gin.Context) {
+	username, role := currentUserAndRole(c)
+	id, _ := strconv.Atoi(c.Param("id"))
+	vms, err := service.GetVPCSwitchVMs(username, role, uint(id))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "message": "ok", "data": vms})
+}
+
 func DeleteVPCSwitch(c *gin.Context) {
 	username, role := currentUserAndRole(c)
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := service.DeleteVPCSwitch(username, role, uint(id)); err != nil {
+	force := c.Query("force") == "true"
+	if err := service.DeleteVPCSwitch(username, role, uint(id), force); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": err.Error()})
 		return
 	}

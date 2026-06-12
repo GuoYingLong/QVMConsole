@@ -86,3 +86,10 @@ type VMInterfaceInfo struct {
 	Switch        *model.VPCSwitch        `json:"switch"`
 	SecurityGroup *model.VPCSecurityGroup `json:"security_group"`
 }
+
+// VMSwitchInfo 交换机下虚拟机简要信息
+type VMSwitchInfo struct {
+	VMName         string `json:"vm_name"`
+	Username       string `json:"username"`
+	InterfaceOrder int    `json:"interface_order"`
+}
