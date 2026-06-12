@@ -639,6 +639,7 @@ ensure_apparmor_storage_access() {
     local qemu_file="/etc/apparmor.d/abstractions/libvirt-qemu.d/kvm-console-storage"
     local storage_root="/var/lib/kvm-storage"
     local template_dir="${KVM_TEMPLATE_DIR:-/var/lib/libvirt/images/templates}"
+    local user_storage_root="$STORAGE_MOUNT"
 
     touch "$helper_file" "$qemu_file"
 
@@ -656,7 +657,7 @@ ensure_apparmor_storage_access() {
         {
             cat "$tmp"
             printf '\n%s\n' "$marker"
-            for root in "$storage_root" "$template_dir"; do
+            for root in "$storage_root" "$user_storage_root" "$template_dir"; do
                 root="${root%/}"
                 [ -n "$root" ] || continue
                 printf '%s/ r,\n' "$root"
