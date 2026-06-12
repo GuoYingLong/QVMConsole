@@ -55,7 +55,7 @@ func GetStorageImagePath() string {
 
 // GetProjectID 获取用户的 project ID（基于系统 UID）
 func GetProjectID(username string) (int, error) {
-	result := utils.ExecShell(fmt.Sprintf("id -u %s 2>/dev/null", utils.ShellSingleQuote(username)))
+	result := utils.ExecShellQuiet(fmt.Sprintf("id -u %s 2>/dev/null", utils.ShellSingleQuote(username)))
 	if result.Error != nil || strings.TrimSpace(result.Stdout) == "" {
 		return 0, fmt.Errorf("获取用户 %s 的 UID 失败", username)
 	}
@@ -140,10 +140,10 @@ func SetUserStorageQuota(username string, limitGB int) error {
 	// setquota -P <project_id> <block-soft> <block-hard> <inode-soft> <inode-hard> <filesystem>
 	result := utils.ExecCommand("setquota", "-P",
 		strconv.Itoa(projectID),
-		"0",                                  // block soft limit
-		strconv.FormatInt(limitKB, 10),        // block hard limit
-		"0",                                   // inode soft limit
-		"0",                                   // inode hard limit
+		"0",                            // block soft limit
+		strconv.FormatInt(limitKB, 10), // block hard limit
+		"0",                            // inode soft limit
+		"0",                            // inode hard limit
 		mountPoint,
 	)
 	if result.Error != nil {
@@ -337,8 +337,7 @@ func InitStorageFilesystem(sizeGB int) error {
 	}
 
 	// 检查镜像文件是否已存在
-	checkResult := utils.ExecShell(fmt.Sprintf("test -f %s && echo yes || echo no", utils.ShellSingleQuote(imgPath)))
-	if strings.TrimSpace(checkResult.Stdout) != "yes" {
+	if !utils.FileExists(imgPath) {
 		if sizeGB <= 0 {
 			// 默认与根分区大小相同
 			if total, _, _, err := utils.GetDiskSpace("/"); err == nil && total > 0 {
@@ -372,7 +371,7 @@ func InitStorageFilesystem(sizeGB int) error {
 	}
 
 	// 启用 project 配额
-	utils.ExecShell(fmt.Sprintf("quotaon -P %s 2>/dev/null || true", utils.ShellSingleQuote(mountPoint)))
+	utils.ExecShellQuiet(fmt.Sprintf("quotaon -P %s 2>/dev/null || true", utils.ShellSingleQuote(mountPoint)))
 
 	// 确保 /etc/projects 和 /etc/projid 文件存在
 	utils.ExecShell("touch /etc/projects /etc/projid")
@@ -391,8 +390,7 @@ func EnsureStorageFilesystem() error {
 	mountPoint := GetStorageMountPoint()
 
 	// 检查镜像文件是否存在
-	checkResult := utils.ExecShell(fmt.Sprintf("test -f %s && echo yes || echo no", utils.ShellSingleQuote(imgPath)))
-	if strings.TrimSpace(checkResult.Stdout) != "yes" {
+	if !utils.FileExists(imgPath) {
 		// 镜像不存在，初始化
 		return InitStorageFilesystem(0)
 	}
@@ -405,14 +403,14 @@ func EnsureStorageFilesystem() error {
 	}
 
 	// 启用配额
-	utils.ExecShell(fmt.Sprintf("quotaon -P %s 2>/dev/null || true", utils.ShellSingleQuote(mountPoint)))
+	utils.ExecShellQuiet(fmt.Sprintf("quotaon -P %s 2>/dev/null || true", utils.ShellSingleQuote(mountPoint)))
 
 	return nil
 }
 
 // CheckQuotaToolsAvailable 检查配额工具是否可用
 func CheckQuotaToolsAvailable() error {
-	result := utils.ExecShell("which setquota repquota 2>/dev/null")
+	result := utils.ExecShellQuiet("which setquota repquota 2>/dev/null")
 	if result.Error != nil || result.Stdout == "" {
 		return fmt.Errorf("配额工具未安装，请执行: apt install quota")
 	}

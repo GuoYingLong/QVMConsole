@@ -68,4 +68,7 @@ func init() {
 	snapshot.HookGetLightweightVMQuota = GetLightweightVMQuota
 	snapshot.HookCheckLightweightVMSnapshotQuota = CheckLightweightVMSnapshotQuota
 	snapshot.HookGetUserVMList = GetUserVMList
+
+	// Snapshot lock hook — service 根包暴露给 handler 层
+	HookEnsureVMNotSnapshotting = snapshot.EnsureVMNotSnapshotting
 }

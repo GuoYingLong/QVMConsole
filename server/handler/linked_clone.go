@@ -71,10 +71,7 @@ func LinkedCloneVm(c *gin.Context) {
 	}
 
 	if err := service.EnsureTemplateVisibleForClone(req.Template, true); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": err.Error(),
-		})
+		templateVisibilityResponse(c, err)
 		return
 	}
 
@@ -84,6 +81,21 @@ func LinkedCloneVm(c *gin.Context) {
 			"code":    400,
 			"message": err.Error(),
 		})
+		return
+	}
+
+	// 同步校验: resolve后的磁盘大小必须 > 0
+	if !validateDiskSize(c, diskSize) {
+		return
+	}
+
+	// 同步校验: 虚拟机名称未被占用
+	if !validateVMNameNotExists(c, req.Name) {
+		return
+	}
+
+	// 同步校验: 所有交换机对应的网桥必须存在
+	if !validateSwitchBridges(c, req.SwitchID, req.ExtraNics) {
 		return
 	}
 

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"kvm_console/model"
 	"kvm_console/service"
+	libvirt_rpc "kvm_console/service/libvirt_rpc"
 	vm_memory "kvm_console/service/vm/memory"
 	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
@@ -384,6 +386,15 @@ func SelfDeleteVm(c *gin.Context) {
 	name := c.Param("name")
 	username, _ := c.Get("username")
 	usernameStr := username.(string)
+
+	// 检查虚拟机是否存在
+	if _, _, _, _, err := libvirt_rpc.GetDomainInfoRPC(name); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": fmt.Sprintf("虚拟机 '%s' 不存在", name),
+		})
+		return
+	}
 
 	// 检查虚拟机是否已锁定
 	if service.IsVMLocked(name) {

@@ -10,7 +10,7 @@ import (
 
 // CountVMSnapshots 统计单台虚拟机的快照数量。
 func CountVMSnapshots(vmName string) int {
-	result := utils.ExecCommand("virsh", "snapshot-list", vmName, "--name")
+	result := utils.ExecCommandQuiet("virsh", "snapshot-list", vmName, "--name")
 	if result.Error != nil {
 		return 0
 	}

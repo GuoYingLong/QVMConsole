@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -9,11 +10,21 @@ import (
 	"kvm_console/model"
 	"kvm_console/service"
 	clonepkg "kvm_console/service/clone"
+	libvirt_rpc "kvm_console/service/libvirt_rpc"
 	vm_memory "kvm_console/service/vm/memory"
 	"kvm_console/service/vm/migration"
 	"kvm_console/service/vm_xml"
 	"kvm_console/taskqueue"
 )
+
+// templateVisibilityResponse 根据 EnsureTemplateVisibleForClone 的错误选择合适的 HTTP 状态码返回
+func templateVisibilityResponse(c *gin.Context, err error) {
+	if strings.Contains(err.Error(), "模板不存在") {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": err.Error()})
+	} else {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "message": err.Error()})
+	}
+}
 
 // CloneVmRequest 克隆请求
 type CloneVmRequest struct {
@@ -133,10 +144,7 @@ func CloneVm(c *gin.Context) {
 	role, _ := c.Get("role")
 	isAdmin := role == "admin"
 	if err := service.EnsureTemplateVisibleForClone(req.Template, isAdmin); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": err.Error(),
-		})
+		templateVisibilityResponse(c, err)
 		return
 	}
 
@@ -171,6 +179,21 @@ func CloneVm(c *gin.Context) {
 			"code":    400,
 			"message": err.Error(),
 		})
+		return
+	}
+
+	// 同步校验: resolve后的磁盘大小必须 > 0
+	if !validateDiskSize(c, diskSize) {
+		return
+	}
+
+	// 同步校验: 虚拟机名称未被占用
+	if !validateVMNameNotExists(c, req.Name) {
+		return
+	}
+
+	// 同步校验: 所有交换机对应的网桥必须存在
+	if !validateSwitchBridges(c, req.SwitchID, req.ExtraNics) {
 		return
 	}
 
@@ -302,10 +325,7 @@ func BatchCloneVm(c *gin.Context) {
 	role, _ := c.Get("role")
 	isAdmin := role == "admin"
 	if err := service.EnsureTemplateVisibleForClone(req.Template, isAdmin); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": err.Error(),
-		})
+		templateVisibilityResponse(c, err)
 		return
 	}
 
@@ -315,6 +335,21 @@ func BatchCloneVm(c *gin.Context) {
 			"code":    400,
 			"message": err.Error(),
 		})
+		return
+	}
+
+	// 同步校验: resolve后的磁盘大小必须 > 0
+	if !validateDiskSize(c, diskSize) {
+		return
+	}
+
+	// 同步校验: 批量虚拟机名称未被占用
+	if !validateBatchVMNamesNotExists(c, req.Prefix, req.StartNum, req.Count) {
+		return
+	}
+
+	// 同步校验: 所有交换机对应的网桥必须存在
+	if !validateSwitchBridges(c, req.SwitchID, req.ExtraNics) {
 		return
 	}
 
@@ -435,10 +470,7 @@ func ReinstallVm(c *gin.Context) {
 	isAdmin := role == "admin"
 
 	if err := service.EnsureTemplateVisibleForClone(req.Template, isAdmin); err != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"code":    403,
-			"message": err.Error(),
-		})
+		templateVisibilityResponse(c, err)
 		return
 	}
 
@@ -537,6 +569,15 @@ func DeleteVm(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": "虚拟机名称不能为空",
+		})
+		return
+	}
+
+	// 检查虚拟机是否存在
+	if _, _, _, _, err := libvirt_rpc.GetDomainInfoRPC(name); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"code":    404,
+			"message": fmt.Sprintf("虚拟机 '%s' 不存在", name),
 		})
 		return
 	}

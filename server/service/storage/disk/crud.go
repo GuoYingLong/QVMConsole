@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/digitalocean/go-libvirt"
+	"kvm_console/logger"
 	"kvm_console/service/libvirt_rpc"
 	"kvm_console/utils"
 )
@@ -358,7 +360,7 @@ func RemoveDisk(vmName, device string, deleteFile bool) error {
 	}
 	vmState, _ := libvirt_rpc.GetDomainStateRPC(vmName)
 
-	// get disk path (from XML)
+	// get disk path and full disk XML from domain definition
 	domainXML, xmlErr := libvirt_rpc.GetDomainXMLRPC(vmName, 0)
 	if xmlErr != nil {
 		return fmt.Errorf("获取虚拟机 XML 失败: %w", xmlErr)
@@ -372,16 +374,37 @@ func RemoveDisk(vmName, device string, deleteFile bool) error {
 		}
 	}
 
-	// detach disk
+	// extract the full <disk> XML block for the target device
+	// using complete XML ensures the detach succeeds for both live and config,
+	// avoiding the issue where virsh domblklist still shows the disk after detach
+	fullDiskXML, extractErr := ExtractFullDiskXML(domainXML, device)
+	if extractErr != nil {
+		logger.Libvirt.Warn("提取完整磁盘XML失败，使用简化XML作为fallback", "device", device, "error", extractErr)
+		// fallback: use simplified XML if extraction fails (should not happen normally)
+		fullDiskXML = fmt.Sprintf("<disk type='file' device='disk'>\n  <target dev='%s'/>\n</disk>", device)
+	}
+
+	// detach disk using full XML definition
 	var detachFlags uint32 = 2 // VIR_DOMAIN_DEVICE_MODIFY_CONFIG
 	if vmState == "running" {
 		// virsh detach-disk --persistent = live + config
 		detachFlags = 3 // VIR_DOMAIN_DEVICE_MODIFY_LIVE | VIR_DOMAIN_DEVICE_MODIFY_CONFIG
 	}
-	// build detach disk XML
-	diskDetXML := fmt.Sprintf("<disk type='file' device='disk'>\n  <target dev='%s'/>\n</disk>", device)
-	if err := libvirt_rpc.DetachDeviceFlagsRPC(vmName, diskDetXML, detachFlags); err != nil {
+	if err := libvirt_rpc.DetachDeviceFlagsRPC(vmName, fullDiskXML, detachFlags); err != nil {
 		return fmt.Errorf("分离磁盘失败: %w", err)
+	}
+
+	// verify the disk has been removed (only for running VMs, where detach is async)
+	if vmState == "running" {
+		for i := 0; i < 5; i++ {
+			time.Sleep(time.Second)
+			if !DiskDeviceExists(vmName, device) {
+				break
+			}
+			if i == 4 {
+				return fmt.Errorf("热删除磁盘超时: 设备 %s 仍然存在", device)
+			}
+		}
 	}
 
 	// delete file

@@ -35,3 +35,4 @@ kvm_console
 server/tmp/
 release/
 docs-web
+tmp/

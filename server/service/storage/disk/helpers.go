@@ -79,6 +79,66 @@ func GetDiskFilePath(vmName, device string) string {
 	return ""
 }
 
+// ExtractFullDiskXML extracts the complete <disk>...</disk> XML block for a target device
+// from a domain XML string. Returns the raw XML substring including all attributes,
+// driver, source, target, address, and backingStore elements.
+// This is needed because DetachDeviceFlagsRPC requires the full disk definition to
+// properly remove the device from both live and persistent config.
+func ExtractFullDiskXML(domainXML, targetDev string) (string, error) {
+	lines := strings.Split(domainXML, "\n")
+	var diskLines []string
+	inDisk := false
+	found := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		if strings.HasPrefix(trimmed, "<disk ") {
+			inDisk = true
+			diskLines = nil
+		}
+
+		if inDisk {
+			diskLines = append(diskLines, line)
+
+			// check if this <disk> block contains our target device
+			if strings.Contains(trimmed, "<target") && strings.Contains(trimmed, "dev='"+targetDev+"'") {
+				found = true
+			}
+
+			if strings.Contains(trimmed, "</disk>") {
+				if found {
+					return strings.Join(diskLines, "\n"), nil
+				}
+					inDisk = false
+					diskLines = nil
+			}
+		}
+	}
+
+	if !found {
+		return "", fmt.Errorf("未找到设备 %s 的磁盘XML定义", targetDev)
+	}
+	return "", fmt.Errorf("未找到设备 %s 的磁盘XML定义", targetDev)
+}
+
+// DiskDeviceExists checks whether a disk device still appears in the VM's domain XML.
+// Used to verify that a detach operation succeeded.
+func DiskDeviceExists(vmName, targetDev string) bool {
+	domainXML, err := libvirt_rpc.GetDomainXMLRPC(vmName, 0)
+	if err != nil {
+		// if we can't get XML, assume the domain doesn't exist or the device is gone
+		return false
+	}
+	blkList := libvirt_rpc.ParseDisksFromDomainXML(domainXML)
+	for _, blk := range blkList {
+		if blk.Target == targetDev {
+			return true
+		}
+	}
+	return false
+}
+
 // TransferDiskFile transfers a disk file to the user's virtual disk directory.
 func TransferDiskFile(diskPath, username string) error {
 	diskDir := GetUserDiskDirFn(username)

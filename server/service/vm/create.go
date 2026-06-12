@@ -159,7 +159,7 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 		params.DiskFormat = "qcow2"
 	}
 	if params.DiskSize <= 0 {
-		params.DiskSize = 20
+		return "", fmt.Errorf("磁盘大小必须大于0GB")
 	}
 	if params.MachineType == "" {
 		params.MachineType = "q35"

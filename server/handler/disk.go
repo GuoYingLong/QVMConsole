@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 
@@ -420,6 +422,13 @@ func ChangeCDROM(c *gin.Context) {
 			"message": "请指定 ISO 路径",
 		})
 		return
+	}
+
+	if req.ISOPath != "" {
+		if _, err := os.Stat(req.ISOPath); os.IsNotExist(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": fmt.Sprintf("ISO文件不存在: %s", req.ISOPath)})
+			return
+		}
 	}
 
 	if err := service.ChangeCDROM(name, req.ISOPath, req.Device, req.ForceNew); err != nil {

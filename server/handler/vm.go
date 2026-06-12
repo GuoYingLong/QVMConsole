@@ -235,6 +235,12 @@ func OperateVm(c *gin.Context) {
 		return
 	}
 
+	// 检查是否正在执行快照操作（VM 处于 paused/saving 状态）
+	if err := service.EnsureVMNotSnapshotting(name, "电源操作"); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+		return
+	}
+
 	// 关机/强制断电时若虚拟机已锁定，在响应中附加提示信息
 	var lockWarning string
 	if (req.Action == "shutdown" || req.Action == "destroy") && service.IsVMLocked(name) {

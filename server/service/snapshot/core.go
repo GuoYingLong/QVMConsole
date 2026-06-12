@@ -13,14 +13,14 @@ import (
 
 // ListSnapshots 列出快照
 func ListSnapshots(vmName string) ([]SnapshotInfo, error) {
-	result := utils.ExecCommand("virsh", "snapshot-list", vmName, "--tree")
+	result := utils.ExecCommandQuiet("virsh", "snapshot-list", vmName, "--tree")
 	if result.Error != nil {
 		// 没有快照时也可能返回错误
 		return []SnapshotInfo{}, nil
 	}
 
 	// 使用详细命令获取每个快照信息
-	listResult := utils.ExecCommand("virsh", "snapshot-list", vmName)
+	listResult := utils.ExecCommandQuiet("virsh", "snapshot-list", vmName)
 	if listResult.Error != nil {
 		return []SnapshotInfo{}, nil
 	}

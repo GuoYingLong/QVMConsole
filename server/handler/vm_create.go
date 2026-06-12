@@ -88,6 +88,21 @@ func CreateVm(c *gin.Context) {
 		return
 	}
 
+	// 同步校验：磁盘大小 > 0
+	if !validateDiskSize(c, req.DiskSize) {
+		return
+	}
+
+	// 同步校验：虚拟机名称未被占用
+	if !validateVMNameNotExists(c, req.Name) {
+		return
+	}
+
+	// 同步校验：所有交换机对应的网桥存在
+	if !validateSwitchBridges(c, req.SwitchID, req.ExtraNics) {
+		return
+	}
+
 	params := &service.CreateVMParams{
 		Name:            req.Name,
 		Remark:          req.Remark,
@@ -301,6 +316,16 @@ func AdminImportDisk(c *gin.Context) {
 			"code":    400,
 			"message": err.Error(),
 		})
+		return
+	}
+
+	// 同步校验: 虚拟机名称未被占用
+	if !validateVMNameNotExists(c, req.Name) {
+		return
+	}
+
+	// 同步校验: 所有交换机对应的网桥必须存在
+	if !validateSwitchBridges(c, req.SwitchID, req.ExtraNics) {
 		return
 	}
 

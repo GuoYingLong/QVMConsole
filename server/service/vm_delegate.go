@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"kvm_console/model"
+	"kvm_console/service/libvirt_rpc"
 	vmpkg "kvm_console/service/vm"
 	"kvm_console/service/vm_xml"
 )
@@ -659,6 +660,10 @@ func ExportVM(ctx context.Context, params *ExportVMParams, progressFn func(int, 
 
 func DomainExists(vmName string) bool {
 	return vmpkg.DomainExists(vmName)
+}
+
+func DomainExistsRPC(vmName string) (bool, error) {
+	return libvirt_rpc.DomainExistsRPC(vmName)
 }
 
 func GetDomainState(vmName string) string {

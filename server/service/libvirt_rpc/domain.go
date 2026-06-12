@@ -66,6 +66,21 @@ func domainStateToString(state libvirt.DomainState) string {
 
 // ==================== 辅助函数 ====================
 
+// DomainExistsRPC 通过 RPC 检查指定名称的域是否已存在
+// 返回 true 表示域存在，false 表示域不存在
+// 如果 libvirt 连接失败，返回错误
+func DomainExistsRPC(name string) (bool, error) {
+	l, err := GetLibvirt()
+	if err != nil {
+		return false, fmt.Errorf("检查域 %s 存在性失败: %w", name, err)
+	}
+	_, err = l.DomainLookupByName(name)
+	if err != nil {
+		return false, nil
+	}
+	return true, nil
+}
+
 // lookupDomainByName 通过名称查找 Domain 对象
 func lookupDomainByName(name string) (libvirt.Domain, error) {
 	l, err := GetLibvirt()
