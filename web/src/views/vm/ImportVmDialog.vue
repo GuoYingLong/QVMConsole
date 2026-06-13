@@ -44,44 +44,6 @@
         </el-col>
       </el-row>
 
-      <el-form-item label="初始化类型">
-        <el-select v-model="form.init_type" placeholder="不初始化" clearable style="width: 100%;">
-          <el-option label="不初始化" value="" />
-          <el-option label="Linux（离线初始化）" value="linux" />
-          <el-option label="Windows（仅创建 VM）" value="windows" />
-          <el-option label="其他（仅创建 VM）" value="other" />
-        </el-select>
-        <div style="margin-top: 4px; color: #909399; font-size: 12px;">
-          Linux 离线初始化通过 virt-customize 设置主机名、密码，模板预装 cloud-init 时启动后自动扩容磁盘
-        </div>
-      </el-form-item>
-
-      <!-- Linux 初始化选项 -->
-      <template v-if="form.init_type === 'linux'">
-        <el-divider content-position="left">Linux 离线初始化配置</el-divider>
-        <el-form-item label="主机名">
-          <el-input v-model="form.hostname" placeholder="留空使用虚拟机名称" />
-        </el-form-item>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="模板用户名">
-              <el-input v-model="form.template_user" placeholder="磁盘中已有的用户名" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="新用户名">
-              <el-input v-model="form.user" placeholder="要重命名的目标用户名" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="新密码">
-              <el-input v-model="form.password" placeholder="离线设置的登录密码" type="password" show-password />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </template>
 
       <!-- 高级选项 -->
       <el-collapse style="margin-top: 8px;">
@@ -154,7 +116,6 @@ const form = reactive({
   disk_file: '',
   vcpu: 2,
   ram: 2,
-  init_type: '',
   hostname: '',
   user: '',
   password: '',
@@ -193,23 +154,6 @@ watch(dialogVisible, (val) => {
   emit('update:modelValue', val)
 })
 
-watch(() => form.init_type, (val) => {
-  if (val === 'windows') {
-    form.video_model = 'vga'
-    if (form.nic_model === 'virtio') {
-      form.nic_model = 'e1000e'
-    }
-    form.boot_type = 'uefi'
-    form.machine_type = 'q35'
-    return
-  }
-  if (val === 'linux' || val === '' || val === 'other') {
-    form.video_model = 'virtio'
-    if (form.nic_model === 'e1000e') {
-      form.nic_model = 'virtio'
-    }
-  }
-})
 
 // 加载磁盘文件列表
 const loadDiskFiles = async () => {
@@ -236,7 +180,6 @@ const handleSubmit = async () => {
       disk_file: form.disk_file,
       vcpu: form.vcpu,
       ram: form.ram,
-      init_type: form.init_type,
       hostname: form.hostname || form.name,
       user: form.user,
       password: form.password,
@@ -264,7 +207,6 @@ const handleClose = () => {
   form.disk_file = ''
   form.vcpu = 2
   form.ram = 2
-  form.init_type = ''
   form.hostname = ''
   form.user = ''
   form.password = ''

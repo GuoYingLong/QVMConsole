@@ -967,7 +967,7 @@
               <div class="step-pane-title">存储介质</div>
               <div class="step-pane-desc" v-if="form.create_mode === 'iso'">选择 ISO 镜像并配置系统磁盘</div>
               <div class="step-pane-desc" v-else-if="isTemplateSourceMode">{{ isLinkedCloneMode ? '选择模板并直接执行原生链式克隆' : '选择模板并配置克隆参数' }}</div>
-              <div class="step-pane-desc" v-else>选择要导入的磁盘文件并配置初始化选项</div>
+              <div class="step-pane-desc" v-else>选择要导入的磁盘文件</div>
             </div>
           </div>
           <div class="step-pane-body">
@@ -1231,18 +1231,6 @@
                     <div class="form-tip"><el-icon><InfoFilled /></el-icon>无论原磁盘是 qcow2 还是其他格式（raw/vmdk 等），选择不保留都会在导入完成后删除原文件</div>
                   </el-form-item>
 
-                  <el-form-item label="初始化类型">
-                    <el-select v-model="form.init_type" placeholder="不初始化" clearable style="width: 100%;" @change="onInitTypeChange">
-                      <el-option label="不初始化" value="" />
-                      <el-option label="Linux（SSH 初始化）" value="linux" />
-                      <el-option label="Windows（仅创建 VM）" value="windows" />
-                      <el-option label="其他（仅创建 VM）" value="other" />
-                    </el-select>
-                    <div style="margin-top: 4px; color: #909399; font-size: 12px;">
-                      Linux 初始化会通过 SSH 设置主机名、用户密码等；Windows 和其他类型仅创建虚拟机
-                    </div>
-                  </el-form-item>
-
                   <!-- 系统盘 IOPS 限制（仅管理员） -->
                   <el-form-item v-if="isAdmin" label="系统盘 IOPS">
                     <div style="display: flex; gap: 8px; align-items: center; width: 100%; flex-wrap: wrap;">
@@ -1305,39 +1293,6 @@
                 </div>
               </div>
 
-              <!-- Linux 初始化配置 -->
-              <template v-if="form.init_type === 'linux'">
-                <div class="form-section-card">
-                  <div class="form-section-card-header">
-                    <el-icon><Setting /></el-icon>
-                    <span>Linux 初始化配置</span>
-                  </div>
-                  <div class="form-section-card-body">
-                    <el-form-item label="主机名">
-                      <el-input v-model="form.hostname" placeholder="留空使用虚拟机名称" />
-                    </el-form-item>
-                    <el-row :gutter="20">
-                      <el-col :span="12">
-                        <el-form-item label="模板用户名">
-                          <el-input v-model="form.template_user" placeholder="磁盘中已有的普通用户名" />
-                        </el-form-item>
-                      </el-col>
-                      <el-col :span="12">
-                        <el-form-item label="新用户名">
-                          <el-input v-model="form.import_user" placeholder="要重命名的目标用户名" />
-                        </el-form-item>
-                      </el-col>
-                    </el-row>
-                    <el-row :gutter="20">
-                      <el-col :span="12">
-                        <el-form-item label="新密码">
-                          <el-input v-model="form.import_password" placeholder="离线设置的登录密码" type="password" show-password />
-                        </el-form-item>
-                      </el-col>
-                    </el-row>
-                  </div>
-                </div>
-              </template>
             </template>
 
           </div>
@@ -1769,7 +1724,7 @@
                 </template>
                 <template v-else>
                   <div class="preview-row"><span class="pr-label">磁盘文件</span><span class="pr-value" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">{{ form.disk_file || '未选择' }}</span></div>
-                  <div v-if="form.init_type" class="preview-row"><span class="pr-label">初始化</span><span class="pr-value">{{ form.init_type }}</span></div>
+
                 </template>
               </template>
             </div>
@@ -2506,7 +2461,7 @@ const bootTypePreviewLabel = computed(() => {
 const isWindowsMemoryTarget = computed(() => {
   if (isEdit.value) return form.os_type === 'windows' || form.memory_backend === 'virtio_mem'
   if (isTemplateSourceMode.value) return form.template_type === 'windows'
-  if (form.create_mode === 'import') return form.init_type === 'windows'
+  if (form.create_mode === 'import') return false
   return form.os_type === 'windows'
 })
 const showMemoryBackendQuickSelect = computed(() => form.memory_dynamic_enabled)
@@ -3386,7 +3341,6 @@ const form = reactive({
   disk_path: '',
   disk_source_type: 'storage',  // 'storage'(从存储选择) / 'path'(绝对路径)
   copy_disk: false,
-  init_type: '',
   start_after_import: true,  // 导入完成后是否开启虚拟机
   extra_import_disks: [],  // 额外导入磁盘列表
   hostname: '',
@@ -3861,7 +3815,7 @@ const onCreateModeChange = (mode) => {
   } else {
     form.disk_file = ''
     form.disk_path = ''
-    form.init_type = ''
+
   }
   if (mode === 'template' || mode === 'linked_clone') {
     applyRTCOffsetRecommendation(form.template_type === 'windows' ? 'windows' : 'linux')
@@ -3870,8 +3824,8 @@ const onCreateModeChange = (mode) => {
     return
   }
   if (mode === 'import') {
-    applyRTCOffsetRecommendation(form.init_type === 'windows' ? 'windows' : 'linux')
-    applyVideoModelRecommendation(form.init_type === 'windows' ? 'windows' : 'linux')
+    applyRTCOffsetRecommendation('linux')
+    applyVideoModelRecommendation('linux')
     normalizeMemoryBackendForGuest()
     return
   }
@@ -3983,11 +3937,7 @@ const onOsTypeChange = () => {
   normalizeMemoryBackendForGuest()
 }
 
-const onInitTypeChange = (value) => {
-  applyRTCOffsetRecommendation(value === 'windows' ? 'windows' : 'linux')
-  applyVideoModelRecommendation(value === 'windows' ? 'windows' : 'linux')
-  normalizeMemoryBackendForGuest()
-}
+
 
 // 切换引导类型
 const onBootTypeChange = () => {
@@ -4266,7 +4216,7 @@ const open = async (row, mode, options = {}) => {
       boot_order: ['hd'], virt_type: 'kvm', arch: 'x86_64',
       add_disks: [], extra_disks: [],
       host_devices: [], host_devices_touched: false,
-      disk_file: '', copy_disk: false, init_type: '', start_after_import: true, hostname: (mode === 'template' || registrationMode.value) ? generateRandomHostname() : '',
+      disk_file: '', copy_disk: false, start_after_import: true, hostname: (mode === 'template' || registrationMode.value) ? generateRandomHostname() : '',
       import_user: '', import_password: '', template_root_pass: '', template_user: '',
       template: '', template_type: '', preserve_fnos_device_id: false, fnos_device_id_mode: 'regenerate', fnos_device_id: '',
       traffic_down_gb: 0, traffic_up_gb: 0, bandwidth_down_mbps: 0, bandwidth_up_mbps: 0, max_port_forwards: 10, max_runtime_hours: 0, batch_count: 1,
@@ -4699,7 +4649,7 @@ const submitForm = async () => {
               vcpu: form.vcpu, ram: form.ram,
               switch_id: nicsPayload.primarySwitchId,
               security_group_id: nicsPayload.primarySecurityGroupId,
-              copy_disk: form.copy_disk, init_type: form.init_type,
+              copy_disk: form.copy_disk,
               hostname: form.hostname || form.name,
               user: form.import_user, password: form.import_password,
               template_root_pass: form.template_root_pass, template_user: form.template_user,
@@ -4749,7 +4699,6 @@ const submitForm = async () => {
             switch_id: nicsPayload.primarySwitchId,
             security_group_id: nicsPayload.primarySecurityGroupId,
             copy_disk: form.copy_disk,
-            init_type: form.init_type,
             hostname: form.hostname || form.name,
             user: form.import_user,
             password: form.import_password,
