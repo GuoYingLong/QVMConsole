@@ -121,6 +121,10 @@ func resolveSourceTemplateForVM(vmName, fallbackTemplateName string) (*TemplateI
 		return nil, err
 	}
 	if source := ReadVMTemplateSource(vmName); source != nil {
+		// 完整克隆的 VM 与模板之间没有 backing chain 依赖，其模板应为独立根节点
+		if source.CloneMode == "full" {
+			return nil, fmt.Errorf("VM 是完整克隆，不继承模板父子关系")
+		}
 		if source.NodeID != "" {
 			if tpl, ok := tree.byNodeID[source.NodeID]; ok {
 				return &tpl, nil

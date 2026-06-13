@@ -188,7 +188,11 @@ func defineAndStartNonWindowsClone(params *CloneParams, cloneDisk string, ramMB 
 			return err
 		}
 	}
-	if err := D.WriteVMTemplateSource(params.Name, params.Template, "linked"); err != nil {
+	cloneMode := params.CloneMode
+	if cloneMode == "" {
+		cloneMode = "linked"
+	}
+	if err := D.WriteVMTemplateSource(params.Name, params.Template, cloneMode); err != nil {
 		logger.App.Warn("写入VM模板源信息失败", "error", err)
 	}
 	if err := D.SetVMRemark(params.Name, params.Remark); err != nil {
