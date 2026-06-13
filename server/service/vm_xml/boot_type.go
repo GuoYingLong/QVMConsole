@@ -48,12 +48,16 @@ func NormalizeVMBootType(bootType string) string {
 }
 
 // ParseVMBootTypeFromDomainXML 从 domain XML 中解析当前引导方式。
+// 支持两种 UEFI 标识：firmware='efi' 自动选择（旧模式）和显式 pflash loader（新模式）。
 func ParseVMBootTypeFromDomainXML(xmlContent string) string {
 	xmlContent = strings.TrimSpace(xmlContent)
 	if xmlContent == "" {
 		return ""
 	}
-	if !strings.Contains(xmlContent, "firmware='efi'") && !strings.Contains(xmlContent, `firmware="efi"`) {
+	isUEFI := strings.Contains(xmlContent, "firmware='efi'") ||
+		strings.Contains(xmlContent, `firmware="efi"`) ||
+		DomainUsesPflashNVRAM(xmlContent)
+	if !isUEFI {
 		return VMBootTypeBIOS
 	}
 	if vmBootTypeSecureFeatureRegexp.MatchString(xmlContent) || vmBootTypeSecureAttrRegexp.MatchString(xmlContent) {
@@ -105,7 +109,8 @@ func resolveVMNVRAMPath(name, xmlContent string) string {
 	return fmt.Sprintf("/var/lib/libvirt/qemu/nvram/%s_VARS.fd", cleanName)
 }
 
-func resolveOVMFLoaderPath(secure bool) string {
+// ResolveOVMFLoaderPath 根据是否启用安全引导选择相应的 OVMF Code 固件路径。
+func ResolveOVMFLoaderPath(secure bool) string {
 	candidates := []string{
 		"/usr/share/OVMF/OVMF_CODE_4M.fd",
 		"/usr/share/OVMF/OVMF_CODE.fd",
@@ -171,8 +176,9 @@ func replaceOSOpenTagFirmware(osBlock string, useEFI bool) string {
 	})
 }
 
-// buildUEFIFirmwareFeatureXML 生成 UEFI 固件特性块（仅 <firmware> 特性声明），不包含 loader/nvram。
-// loader 与 nvram 由 libvirt 的 firmware='efi' 自动选择机制处理，显式写入会与自动选择冲突。
+// buildUEFIFirmwareFeatureXML 生成 UEFI 固件特性块（仅 <firmware> 特性声明）。
+// 注意：此函数仅在使用 firmware='efi' 自动选择模式时有意义（已废弃）。
+// 当前推荐方案为显式 loader/nvram，通过 loader 的 secure='yes' 属性来启用安全引导。
 func buildUEFIFirmwareFeatureXML(secure bool) string {
 	if !secure {
 		return ""
@@ -245,6 +251,9 @@ func ensureVMSecureBootSMM(xmlContent string) string {
 }
 
 // ApplyVMBootTypeToDomainXML 将引导方式写入 domain XML。
+// 使用显式 <loader> + <nvram format='qcow2'> 模式，不使用 firmware='efi' 自动选择，
+// 以避免 libvirt 自动填充 nvram format='raw' 导致与 qcow2 实际格式不匹配（黑屏），
+// 同时避免不同环境缺少 firmware descriptor 导致 "Unable to find 'efi' firmware" 错误。
 func ApplyVMBootTypeToDomainXML(name, xmlContent, bootType string) (string, error) {
 	normalized := NormalizeVMBootType(bootType)
 	if normalized == "" {
@@ -270,16 +279,20 @@ func ApplyVMBootTypeToDomainXML(name, xmlContent, bootType string) (string, erro
 		return "", fmt.Errorf("未找到虚拟机的 <os> 配置段")
 	}
 
+	// 清除所有 UEFI 相关元素：firmware 属性、firmware 特性块、loader、nvram
 	cleanedOS := vmBootTypeFirmwareBlockRegexp.ReplaceAllString(osBlock, "")
 	cleanedOS = vmBootTypeLoaderBlockRegexp.ReplaceAllString(cleanedOS, "")
 	cleanedOS = vmBootTypeNVRAMBlockRegexp.ReplaceAllString(cleanedOS, "")
-	cleanedOS = replaceOSOpenTagFirmware(cleanedOS, normalized != VMBootTypeBIOS)
+	// 始终移除 firmware='efi' 属性，改用显式 loader/nvram
+	cleanedOS = replaceOSOpenTagFirmware(cleanedOS, false)
 
 	if normalized != VMBootTypeBIOS {
-		// 使用 firmware='efi' 自动选择模式时，只注入 <firmware> 特性块（用于声明 secure-boot 等需求），
-		// 不注入显式 loader/nvram，否则会与自动选择冲突导致 "Unable to find 'efi' firmware" 错误。
 		secure := normalized == VMBootTypeUEFISecure
-		cleanedOS = insertUEFIFirmwareXML(cleanedOS, buildUEFIFirmwareFeatureXML(secure))
+		loaderPath := ResolveOVMFLoaderPath(secure)
+		varsTemplate := ResolveOVMFVarsTemplatePath(secure)
+		nvramPath := resolveVMNVRAMPath(name, xmlContent)
+		loaderNVRAMXML := buildUEFILoaderNVRAMXML(secure, loaderPath, varsTemplate, nvramPath)
+		cleanedOS = insertUEFIFirmwareXML(cleanedOS, loaderNVRAMXML)
 	}
 
 	updated := strings.Replace(xmlContent, osBlock, cleanedOS, 1)

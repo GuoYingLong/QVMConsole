@@ -155,16 +155,16 @@ func cloneWindows(ctx context.Context, params *CloneParams, cloneDisk string, ra
 	smmXML := ""
 	tpmXML := ""
 	if needUEFI {
-		// 使用 firmware='efi' 自动选择模式，只声明 secure-boot 等特性需求，
-		// 不注入显式 loader/nvram，否则会与自动选择冲突。
-		osXML = fmt.Sprintf(`  <os firmware='efi'>
+		// 使用显式 loader/nvram 模式，不使用 firmware='efi' 自动选择，
+		// 避免 libvirt 自动填充 nvram format='raw' 与 qcow2 格式不匹配导致黑屏。
+		loaderPath := vm_xml.ResolveOVMFLoaderPath(true)
+		varsTemplate := vm_xml.ResolveOVMFVarsTemplatePath(true)
+		osXML = fmt.Sprintf(`  <os>
     <type arch='x86_64' machine='pc-q35-noble'>hvm</type>
-    <firmware>
-      <feature enabled='yes' name='enrolled-keys'/>
-      <feature enabled='yes' name='secure-boot'/>
-    </firmware>
+    <loader readonly='yes' secure='yes' type='pflash'>%s</loader>
+    <nvram template='%s' templateFormat='raw' format='qcow2'>%s</nvram>
     <boot dev='hd'/>
-  </os>`)
+  </os>`, loaderPath, varsTemplate, nvramClone)
 		smmXML = "<smm state='on'/>"
 		tpmXML = "    <tpm model='tpm-crb'><backend type='emulator' version='2.0'/></tpm>\n"
 	}

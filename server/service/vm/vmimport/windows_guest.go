@@ -42,16 +42,19 @@ func importVMWindowsDefine(params *ImportVMParams, destDiskPath, format string, 
 		clockOpenTag = fmt.Sprintf("<clock offset='%s' start='%s'>", rtcOffset, epoch)
 	}
 
+	// 使用显式 loader/nvram，不使用 firmware='efi' 自动选择，
+	// 避免 libvirt 自动填充 nvram format='raw' 与 qcow2 格式不匹配导致黑屏。
+	loaderPath := vm_xml.ResolveOVMFLoaderPath(true)
+	varsTemplate := vm_xml.ResolveOVMFVarsTemplatePath(true)
+
 	vmXML := fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
 %s
-  <os firmware='efi'>
+  <os>
     <type arch='x86_64' machine='pc-q35-noble'>hvm</type>
-    <firmware>
-      <feature enabled='yes' name='enrolled-keys'/>
-      <feature enabled='yes' name='secure-boot'/>
-    </firmware>
+    <loader readonly='yes' secure='yes' type='pflash'>%s</loader>
+    <nvram template='%s' templateFormat='raw' format='qcow2'>%s</nvram>
     <boot dev='hd'/>
   </os>
   <features>
@@ -87,7 +90,7 @@ func importVMWindowsDefine(params *ImportVMParams, destDiskPath, format string, 
     <memballoon model='virtio' freePageReporting='on'><stats period='5'/></memballoon>
   </devices>
 </domain>`,
-		params.Name, ramKiB, service.BuildVCPUTag(params.VCPU, params.MaxVCPU), clockOpenTag, format, destDiskPath, service.BuildOVSInterfaceXML(macAddr, params.NicModel))
+		params.Name, ramKiB, service.BuildVCPUTag(params.VCPU, params.MaxVCPU), loaderPath, varsTemplate, nvramClone, clockOpenTag, format, destDiskPath, service.BuildOVSInterfaceXML(macAddr, params.NicModel))
 
 	var err error
 	if memoryMeta != nil {
@@ -188,16 +191,18 @@ func importDiskByPathWindowsDefine(params *ImportDiskByPathParams, destDiskPath,
 		clockOpenTag = fmt.Sprintf("<clock offset='%s' start='%s'>", rtcOffset, epoch)
 	}
 
+	// 使用显式 loader/nvram，不使用 firmware='efi' 自动选择
+	loaderPath2 := vm_xml.ResolveOVMFLoaderPath(true)
+	varsTemplate2 := vm_xml.ResolveOVMFVarsTemplatePath(true)
+
 	vmXML := fmt.Sprintf(`<domain type='kvm'>
   <name>%s</name>
   <memory unit='KiB'>%d</memory>
 %s
-  <os firmware='efi'>
+  <os>
     <type arch='x86_64' machine='pc-q35-noble'>hvm</type>
-    <firmware>
-      <feature enabled='yes' name='enrolled-keys'/>
-      <feature enabled='yes' name='secure-boot'/>
-    </firmware>
+    <loader readonly='yes' secure='yes' type='pflash'>%s</loader>
+    <nvram template='%s' templateFormat='raw' format='qcow2'>%s</nvram>
     <boot dev='hd'/>
   </os>
   <features>
@@ -233,7 +238,7 @@ func importDiskByPathWindowsDefine(params *ImportDiskByPathParams, destDiskPath,
     <memballoon model='virtio' freePageReporting='on'><stats period='5'/></memballoon>
   </devices>
 </domain>`,
-		params.Name, ramKiB, service.BuildVCPUTag(params.VCPU, params.MaxVCPU), clockOpenTag, format, destDiskPath, service.BuildOVSInterfaceXML(macAddr, params.NicModel))
+		params.Name, ramKiB, service.BuildVCPUTag(params.VCPU, params.MaxVCPU), loaderPath2, varsTemplate2, nvramClone, clockOpenTag, format, destDiskPath, service.BuildOVSInterfaceXML(macAddr, params.NicModel))
 
 	var err error
 	if memoryMeta != nil {
