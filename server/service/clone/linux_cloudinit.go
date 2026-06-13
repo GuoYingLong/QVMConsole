@@ -11,9 +11,9 @@ import (
 	"kvm_console/utils"
 )
 
-// prepareLinuxNoCloudInit 通过 virt-customize 离线完成 Linux 克隆全部初始化
-// 无需 SSH 连接：清理身份信息、写入 cloud-init NoCloud seed 文件、离线修改密码与用户名
-// 适用于所有 Linux 模板，cloud-init seed 对无 cloud-init 的模板无害（被忽略）
+// prepareLinuxNoCloudInit 通过 virt-customize 完成 Linux 克隆全部初始化
+// 无需 SSH 连接：自动安装 cloud-init（如缺失）、清理身份信息、写入 cloud-init NoCloud seed 文件、离线修改密码与用户名
+// 适用于所有 Linux 模板；若宿主机无网络则跳过包安装，seed 文件将静默失效但不影响 VM 可用性
 func prepareLinuxNoCloudInit(params *CloneParams, cloneDisk string) error {
 	// 生成 cloud-init seed 文件内容
 	metaData := buildNoCloudMetaData(params)
@@ -39,7 +39,8 @@ func prepareLinuxNoCloudInit(params *CloneParams, cloneDisk string) error {
 
 	args := []string{
 		"-a", cloneDisk,
-		"--no-network",
+		// 0. 确保 cloud-init 和 growpart 已安装（无网络环境下安装会静默失败，不影响后续流程）
+		"--install", "cloud-init,cloud-guest-utils",
 		// 1. 清理 machine-id（重置实例身份）
 		"--run-command", "truncate -s 0 /etc/machine-id 2>/dev/null || rm -f /etc/machine-id",
 		"--run-command", "rm -f /var/lib/dbus/machine-id 2>/dev/null || true",
