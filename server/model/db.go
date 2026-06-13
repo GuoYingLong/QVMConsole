@@ -206,6 +206,12 @@ func migratePublicIPCIDRColumn() {
 	if err := DB.Exec("UPDATE public_ips SET cidr = c_id_r WHERE (cidr IS NULL OR cidr = '') AND c_id_r IS NOT NULL AND c_id_r <> ''").Error; err != nil {
 		logger.App.Warn("迁移公网IP CIDR字段失败", "error", err)
 	}
+	// 删除遗留的 c_id_r 列
+	if err := DB.Exec("ALTER TABLE public_ips DROP COLUMN c_id_r").Error; err != nil {
+		logger.App.Warn("删除公网IP遗留列 c_id_r 失败", "error", err)
+	} else {
+		logger.App.Info("已删除公网IP遗留列 c_id_r")
+	}
 }
 
 func migrateVPCBindingInterfaceOrder(hadColumn bool) {
@@ -269,6 +275,12 @@ func migrateVPCSwitchCIDRColumn(hadColumn bool) {
 			logger.App.Warn("迁移 c_id_r → cidr 数据失败", "error", err)
 		} else {
 			logger.App.Info("已从 c_id_r 迁移数据到 cidr 列")
+		}
+		// 删除遗留的 c_id_r 列（SQLite 3.35+ 支持 DROP COLUMN）
+		if err := DB.Exec("ALTER TABLE vpc_switches DROP COLUMN c_id_r").Error; err != nil {
+			logger.App.Warn("删除遗留列 c_id_r 失败", "error", err)
+		} else {
+			logger.App.Info("已删除遗留列 c_id_r")
 		}
 		// 创建唯一索引（可能因之前迁移失败而缺失）
 		if err := DB.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_vpc_switches_cidr ON vpc_switches(cidr)").Error; err != nil {

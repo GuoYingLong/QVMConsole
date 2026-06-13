@@ -2,7 +2,7 @@
 schema_version: 1
 locale: zh-CN
 branch: main
-exported_at: "2026-06-12T13:25:20Z"
+exported_at: "2026-06-13T00:47:16Z"
 modules:
     "":
         dir_name: QVMConsole 虚拟化资源编排平台
@@ -493,8 +493,8 @@ modules:
         depends_on: []
         related_to: []
     backend_service:
-        dir_name: QVMConsole 虚拟化管控后端
-        title: QVMConsole 虚拟化管控后端
+        dir_name: QVMConsole 后端服务核心与运行时编排
+        title: QVMConsole 后端服务核心与运行时编排
         scope:
             - server/
         source_files: []
