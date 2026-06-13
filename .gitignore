@@ -36,3 +36,4 @@ server/tmp/
 release/
 docs-web
 tmp/
+.qoder/
