@@ -363,7 +363,7 @@ const fetchData = async () => {
   try {
     const [ipRes, userRes, vmRes] = await Promise.all([getPublicIPs(), getUserList(), getVmList()])
     tableData.value = ipRes.data || []
-    users.value = (userRes.data || []).filter(item => item.role !== 'admin')
+    users.value = (userRes.data || [])
     const ownerMap = {}
     users.value.forEach(user => {
       ;(user.vms || []).forEach(vmName => { ownerMap[vmName] = user.username })
