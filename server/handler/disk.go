@@ -491,6 +491,98 @@ func RemoveCDROMHandler(c *gin.Context) {
 	})
 }
 
+// ==================== 软盘管理 ====================
+
+// ChangeFloppyRequest 更换/插入软盘请求
+type ChangeFloppyRequest struct {
+	ImagePath string `json:"image_path" binding:"required"`
+	Device    string `json:"device"`    // 可选，不填自动查找
+	ForceNew  bool   `json:"force_new"` // 为 true 时强制新增软盘设备
+}
+
+// ChangeFloppy 更换/插入软盘
+func ChangeFloppy(c *gin.Context) {
+	name := c.Param("name")
+	if err := service.EnsureVMNotMigrating(name, "更换软盘"); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+		return
+	}
+	var req ChangeFloppyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    400,
+			"message": "请指定软盘镜像路径",
+		})
+		return
+	}
+
+	if req.ImagePath != "" {
+		if _, err := os.Stat(req.ImagePath); os.IsNotExist(err) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": fmt.Sprintf("软盘镜像文件不存在: %s", req.ImagePath)})
+			return
+		}
+	}
+
+	if err := service.ChangeFloppy(name, req.ImagePath, req.Device, req.ForceNew); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "软盘已插入",
+	})
+}
+
+// EjectFloppy 弹出软盘
+func EjectFloppy(c *gin.Context) {
+	name := c.Param("name")
+	device := c.Query("device") // 可选参数
+	if err := service.EnsureVMNotMigrating(name, "弹出软盘"); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+		return
+	}
+
+	if err := service.EjectFloppy(name, device); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "软盘已弹出",
+	})
+}
+
+// RemoveFloppyHandler 移除软盘设备
+func RemoveFloppyHandler(c *gin.Context) {
+	name := c.Param("name")
+	device := c.Query("device") // 可选参数
+	if err := service.EnsureVMNotMigrating(name, "移除软盘"); err != nil {
+		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
+		return
+	}
+
+	if err := service.RemoveFloppy(name, device); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code":    500,
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "软盘已移除",
+	})
+}
+
 // ImportDiskForVMRequest 为已有虚拟机导入磁盘请求
 type ImportDiskForVMRequest struct {
 	DiskPath       string `json:"disk_path"`

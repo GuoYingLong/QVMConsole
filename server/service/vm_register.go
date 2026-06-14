@@ -47,6 +47,7 @@ func init() {
 		CheckVMSnapshotSafety: CheckVMSnapshotSafety,
 		GetDiskFilePath:       GetDiskFilePath,
 		ListDisks:             ListDisks,
+		ChangeFloppy:          ChangeFloppy,
 
 		// ---- Rescue ----
 		IsInRescueMode: IsInRescueMode,

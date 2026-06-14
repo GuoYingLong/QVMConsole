@@ -65,6 +65,18 @@ func RemoveCDROM(vmName, device string) error {
 	return disk.RemoveCDROM(vmName, device)
 }
 
+func ChangeFloppy(vmName, imagePath, device string, forceNew bool) error {
+	return disk.ChangeFloppy(vmName, imagePath, device, forceNew)
+}
+
+func EjectFloppy(vmName, device string) error {
+	return disk.EjectFloppy(vmName, device)
+}
+
+func RemoveFloppy(vmName, device string) error {
+	return disk.RemoveFloppy(vmName, device)
+}
+
 func SetDiskIOPSTune(vmName, dev string, iops *DiskIOPSTune) error {
 	return disk.SetDiskIOPSTune(vmName, dev, iops)
 }

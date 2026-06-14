@@ -201,6 +201,11 @@ func Setup() *gin.Engine {
 				vm.POST("/:name/cdrom/eject", middleware.ElasticCloudOnlyMiddleware(), handler.EjectCDROM)
 				vm.DELETE("/:name/cdrom", middleware.ElasticCloudOnlyMiddleware(), handler.RemoveCDROMHandler)
 
+				// 软盘管理
+				vm.POST("/:name/floppy", middleware.ElasticCloudOnlyMiddleware(), handler.ChangeFloppy)
+				vm.POST("/:name/floppy/eject", middleware.ElasticCloudOnlyMiddleware(), handler.EjectFloppy)
+				vm.DELETE("/:name/floppy", middleware.ElasticCloudOnlyMiddleware(), handler.RemoveFloppyHandler)
+
 				// 救援系统
 				vm.POST("/:name/rescue", handler.RescueVm)
 				vm.POST("/:name/password/reset", handler.ResetLinuxPassword)

@@ -124,7 +124,7 @@
               <el-button icon="Refresh" @click="loadFiles('disk')">刷新</el-button>
             </div>
             <el-alert type="info" :closable="false" style="margin-bottom: 12px;">
-              <template #title>此目录存放虚拟机导出的磁盘文件和从外部上传的磁盘文件（支持 .qcow2、.raw、.vmdk、.vhd、.vhdx、.img）</template>
+              <template #title>此目录存放虚拟机导出的磁盘文件和从外部上传的磁盘文件（支持 .qcow2、.raw、.vmdk、.vhd、.vhdx、.img、.vfd）</template>
             </el-alert>
             <el-table :data="diskFiles" border v-loading="filesLoading" empty-text="暂无磁盘文件">
               <el-table-column prop="name" label="文件名" min-width="250" show-overflow-tooltip />

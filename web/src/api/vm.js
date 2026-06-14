@@ -564,6 +564,35 @@ export function removeCDROM(name, device = '') {
   })
 }
 
+// ==================== 软盘管理 ====================
+
+// 插入/更换软盘
+export function changeFloppy(name, data) {
+  return request({
+    url: `/vm/${name}/floppy`,
+    method: 'post',
+    data
+  })
+}
+
+// 弹出软盘
+export function ejectFloppy(name, device = '') {
+  return request({
+    url: `/vm/${name}/floppy/eject`,
+    method: 'post',
+    params: device ? { device } : {}
+  })
+}
+
+// 移除软盘设备
+export function removeFloppy(name, device = '') {
+  return request({
+    url: `/vm/${name}/floppy`,
+    method: 'delete',
+    params: device ? { device } : {}
+  })
+}
+
 // ==================== 救援系统 ====================
 
 // 启动/关闭救援系统

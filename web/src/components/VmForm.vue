@@ -96,7 +96,7 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="磁盘与光驱" name="disk">
+        <el-tab-pane label="磁盘与驱动器" name="disk">
           <div class="tab-content-wrapper">
             <el-form-item label="当前磁盘" v-if="editDisks.length > 0">
               <el-table :data="editDisks" size="small" border style="width: 100%;">
@@ -184,6 +184,33 @@
                 <div v-if="editVmStatus === 'running'" class="form-tip" style="margin-top: 8px;">
                   <el-icon><InfoFilled /></el-icon>
                   运行中新增光驱会自动改用支持热插的 SCSI 总线；已有光驱插入 ISO 仍复用原设备
+                </div>
+              </div>
+            </el-form-item>
+
+            <el-divider content-position="left"><el-icon style="margin-right: 4px;"><Discount /></el-icon>软盘驱动器</el-divider>
+            <el-form-item label="软盘管理">
+              <div style="width: 100%;">
+                <div v-if="editFloppys.length > 0">
+                  <div v-for="floppy in editFloppys" :key="floppy.device" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px; padding: 6px 8px; background: #f5f7fa; border-radius: 4px;">
+                    <el-tag type="info" size="small">{{ floppy.device }}</el-tag>
+                    <span style="flex: 1; font-size: 13px; color: #606266; word-break: break-all;">{{ floppy.path || '（空软盘）' }}</span>
+                    <el-button v-if="!floppy.path" size="small" type="success" plain :disabled="!floppyImagePath" @click="handleInsertFloppy(floppy.device)">插入</el-button>
+                    <el-button v-if="floppy.path" size="small" plain @click="handleEjectFloppy(floppy.device)">弹出</el-button>
+                    <el-button size="small" type="danger" plain @click="handleRemoveFloppy(floppy.device)">移除</el-button>
+                  </div>
+                </div>
+                <div v-else style="color: #909399; font-size: 13px; margin-bottom: 8px;">无软盘设备</div>
+                <div style="display: flex; gap: 8px; margin-top: 4px;">
+                  <el-select v-model="floppyImagePath" placeholder="从我的存储选择软盘镜像" style="flex: 1;" filterable clearable v-loading="diskFilesLoading" @focus="loadDiskFiles">
+                    <el-option v-for="file in diskFileList" :key="file.name" :label="file.name" :value="file.path">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span>{{ file.name }}</span>
+                        <span style="color: #999; font-size: 12px;">{{ file.size_text }}</span>
+                      </div>
+                    </el-option>
+                  </el-select>
+                  <el-button type="primary" size="default" :disabled="!floppyImagePath" @click="handleAddNewFloppy">添加软盘</el-button>
                 </div>
               </div>
             </el-form-item>
@@ -1295,6 +1322,27 @@
 
             </template>
 
+            <!-- 软盘驱动器（所有创建模式） -->
+            <div class="form-section-card">
+              <div class="form-section-card-header">
+                <el-icon><Discount /></el-icon>
+                <span>软盘驱动器（可选）</span>
+              </div>
+              <div class="form-section-card-body">
+                <el-form-item label="软盘镜像">
+                  <el-select v-model="form.floppy_image" placeholder="从我的存储选择软盘镜像（可选）" style="width: 100%;" filterable clearable v-loading="diskFilesLoading" @focus="loadDiskFiles">
+                    <el-option v-for="file in diskFileList" :key="file.name" :label="file.name" :value="file.path">
+                      <div style="display: flex; justify-content: space-between;">
+                        <span>{{ file.name }}</span>
+                        <span style="color: #999; font-size: 12px;">{{ file.size_text }}</span>
+                      </div>
+                    </el-option>
+                  </el-select>
+                  <div class="form-tip"><el-icon><InfoFilled /></el-icon>从「我的存储 → 虚拟磁盘」中选择 .img、.vfd 等软盘镜像，虚拟机创建后将自动挂载为软盘驱动器 (fda)</div>
+                </el-form-item>
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -1708,6 +1756,7 @@
               <template v-if="isEdit">
                 <div class="preview-row"><span class="pr-label">磁盘数</span><span class="pr-value">{{ editDisks.length }} 个</span></div>
                 <div class="preview-row"><span class="pr-label">光驱数</span><span class="pr-value">{{ editCdroms.length }} 个</span></div>
+                <div class="preview-row"><span class="pr-label">软盘数</span><span class="pr-value">{{ editFloppys.length }} 个</span></div>
                 <div class="preview-row"><span class="pr-label">待新增</span><span class="pr-value">{{ form.add_disks.length }} 个</span></div>
               </template>
               <template v-else>
@@ -1716,6 +1765,7 @@
                   <div class="preview-row"><span class="pr-label">磁盘驱动</span><span class="pr-value">{{ form.disk_bus }}</span></div>
                   <div v-if="form.iso_path" class="preview-row"><span class="pr-label">ISO</span><span class="pr-value" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">{{ form.iso_path.split('/').pop() }}</span></div>
                   <div v-if="form.iso_paths.length > 1" class="preview-row"><span class="pr-label">额外挂载</span><span class="pr-value">+{{ form.iso_paths.length - 1 }} 个 ISO</span></div>
+                  <div v-if="form.floppy_image" class="preview-row"><span class="pr-label">软盘</span><span class="pr-value" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">{{ form.floppy_image.split('/').pop() }}</span></div>
                 </template>
                 <template v-else-if="isTemplateSourceMode">
                   <div class="preview-row"><span class="pr-label">模板</span><span class="pr-value" style="max-width: 120px; overflow: hidden; text-overflow: ellipsis;">{{ form.template || '未选择' }}</span></div>
@@ -2218,7 +2268,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { updateVm, getVmXML, updateVmXML, createVm, cloneVm, linkedCloneVm, batchCloneVm, getTemplateList, getOSVariants, getVmDetail, getDiskList, resizeDisk, removeDisk, changeDiskBus, attachDisk, changeCDROM, ejectCDROM, removeCDROM, adminImportDisk, adminImportDiskForVM, getPassthroughDevices, getVmPassthroughDevices, bindPCIDevice } from '@/api/vm'
+import { updateVm, getVmXML, updateVmXML, createVm, cloneVm, linkedCloneVm, batchCloneVm, getTemplateList, getOSVariants, getVmDetail, getDiskList, resizeDisk, removeDisk, changeDiskBus, attachDisk, changeCDROM, ejectCDROM, removeCDROM, changeFloppy, ejectFloppy, removeFloppy, adminImportDisk, adminImportDiskForVM, getPassthroughDevices, getVmPassthroughDevices, bindPCIDevice } from '@/api/vm'
 import { getAllISOs, getVMStorageTargets } from '@/api/infra'
 import { getUserISOs, selfCreateVm, importVM } from '@/api/storage'
 import { getStorageFiles } from '@/api/storage'
@@ -2226,7 +2276,7 @@ import { selfCloneVm } from '@/api/user'
 import { getVPCSecurityGroups, getVPCSwitches } from '@/api/vpc'
 import { getCPUAffinityPresets, getSettings, getHostCPUCores } from '@/api/settings'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Top, Bottom, Delete, Plus, ArrowRight } from '@element-plus/icons-vue'
+import { Top, Bottom, Delete, Plus, ArrowRight, Discount } from '@element-plus/icons-vue'
 import FormIcons from '@/components/icons/FormIcons.vue'
 import { useUserStore } from '@/store/user'
 import { templateCategoryLabel, templateGroupLabel } from '@/utils/templateCategory'
@@ -2239,7 +2289,7 @@ const activeTabEdit = ref('basic')
 
 const editTabs = [
   { name: 'basic', label: '基础配置', desc: 'CPU/内存', icon: 'Cpu' },
-  { name: 'disk', label: '磁盘与光驱', desc: '存储管理', icon: 'Coin' },
+  { name: 'disk', label: '磁盘与驱动器', desc: '存储管理', icon: 'Coin' },
   { name: 'security', label: '启动与安全', desc: '网络/引导', icon: 'Operation' },
   { name: 'hardware', label: '硬件直通', desc: 'PCI设备', icon: 'Monitor' },
   { name: 'advanced', label: '高级设置', desc: '开发者选项', icon: 'Setting' },
@@ -3235,6 +3285,8 @@ const editVmVNC = ref('')
 const editDisks = ref([])
 const editCdroms = ref([])  // [{device, path}]
 const cdromIsoPath = ref('')
+const editFloppys = ref([])  // [{device, path}]
+const floppyImagePath = ref('')
 const editOrigNicModel = ref('')  // 编辑模式下原始网卡类型，用于判断是否已修改
 const editOrigBootType = ref('')  // 编辑模式下原始引导方式，用于判断是否已修改
 const editOrigPCIERootPorts = ref(0)  // 编辑模式下原始 PCIe 端口数，用于判断是否已修改
@@ -3288,6 +3340,7 @@ const form = reactive({
   system_disk_iops_write: 0,
   iso_path: '',
   iso_paths: [],
+  floppy_image: '',
   switch_id: null,
   security_group_id: null,
   nic_model: 'virtio',
@@ -4194,13 +4247,15 @@ const open = async (row, mode, options = {}) => {
     editDisks.value = []
     editCdroms.value = []
     cdromIsoPath.value = ''
+    editFloppys.value = []
+    floppyImagePath.value = ''
     currentVmUUID.value = ''
     Object.assign(form, {
       name: generateRandomVmName(), remark: '', vcpu: 2, memory: 2, ram: 2,
       disk_size: (mode === 'template' || mode === 'linked_clone' || registrationMode.value) ? 0 : 20, create_mode: mode === 'import' ? 'import' : (mode === 'template' || mode === 'linked_clone' || registrationMode.value) ? (mode === 'linked_clone' ? 'linked_clone' : 'template') : 'iso',
       os_type: 'linux', os_variant: '', disk_format: 'qcow2', disk_bus: 'virtio',
       system_disk_iops_total: 0, system_disk_iops_read: 0, system_disk_iops_write: 0,
-      iso_path: '', iso_paths: [], switch_id: registrationContext.dedicated_vpc_switch_id || null, security_group_id: null, nic_model: 'virtio', video_model: 'virtio', cpu_topology_mode: 'auto', first_boot_reboot_mode: 'normal', autostart: false, freeze: false, apic: true, pae: true, rtc_offset: 'utc', rtc_startdate: 'now',
+      iso_path: '', iso_paths: [], floppy_image: '', switch_id: registrationContext.dedicated_vpc_switch_id || null, security_group_id: null, nic_model: 'virtio', video_model: 'virtio', cpu_topology_mode: 'auto', first_boot_reboot_mode: 'normal', autostart: false, freeze: false, apic: true, pae: true, rtc_offset: 'utc', rtc_startdate: 'now',
       storage_pool_id: '',
       guest_agent: createEmptyGuestAgentConfig(),
       memory_dynamic_enabled: false, memory_backend: 'balloon', memory_initial: 2, memory_min: 1, memory_max_dynamic: 3, memory_auto_balloon: true, memory_current: 0, memory_virtio_mem_current: 0,
@@ -4231,19 +4286,26 @@ const open = async (row, mode, options = {}) => {
   }
 }
 
-// 刷新编辑模式下的磁盘列表（分离 CD/DVD 和普通磁盘）
+// 刷新编辑模式下的磁盘列表（分离 CD/DVD、软盘和普通磁盘）
 const refreshEditDisks = async () => {
   if (!form.name) return
   try {
     const diskRes = await getDiskList(form.name)
     const allDisks = diskRes.data || []
 
-    // 分离 CD/DVD 和普通磁盘
+    // 分离 CD/DVD、软盘和普通磁盘
     const normalDisks = []
     const cdroms = []
+    const floppys = []
     for (const d of allDisks) {
+      const isFloppy = d.device_type === 'floppy' || (d.path && (d.path.endsWith('.img') || d.path.endsWith('.vfd') || d.path.endsWith('.flp')))
       const isCdrom = d.device_type === 'cdrom' || (d.path && d.path.endsWith('.iso'))
-      if (isCdrom) {
+      if (isFloppy) {
+        floppys.push({
+          device: d.device,
+          path: (d.path && d.path !== '-') ? d.path : '',
+        })
+      } else if (isCdrom) {
         cdroms.push({
           device: d.device,
           path: (d.path && d.path !== '-') ? d.path : '',
@@ -4253,6 +4315,7 @@ const refreshEditDisks = async () => {
       }
     }
     editCdroms.value = cdroms
+    editFloppys.value = floppys
     editDisks.value = normalDisks
   } catch {}
 }
@@ -4312,6 +4375,65 @@ const handleRemoveCDROM = async (device) => {
     )
     await removeCDROM(form.name, device)
     ElMessage.success('光驱已移除')
+    refreshEditDisks()
+  } catch {}
+}
+
+// ==================== 软盘操作 ====================
+
+// 插入软盘（替换已有软盘的镜像）
+const handleInsertFloppy = async (device) => {
+  if (!floppyImagePath.value) return
+  try {
+    await changeFloppy(form.name, {
+      image_path: floppyImagePath.value,
+      device: device || '',
+    })
+    ElMessage.success('软盘已插入')
+    floppyImagePath.value = ''
+    refreshEditDisks()
+  } catch (err) {
+    console.error('插入软盘失败', err)
+  }
+}
+
+// 添加新软盘设备（强制新增，不替换已有的）
+const handleAddNewFloppy = async () => {
+  if (!floppyImagePath.value) return
+  try {
+    await changeFloppy(form.name, {
+      image_path: floppyImagePath.value,
+      force_new: true,
+    })
+    ElMessage.success('软盘已添加')
+    floppyImagePath.value = ''
+    refreshEditDisks()
+  } catch (err) {
+    console.error('添加软盘失败', err)
+  }
+}
+
+// 弹出软盘
+const handleEjectFloppy = async (device) => {
+  try {
+    await ejectFloppy(form.name, device)
+    ElMessage.success('软盘已弹出')
+    refreshEditDisks()
+  } catch {
+    console.error('弹出软盘失败')
+  }
+}
+
+// 移除软盘设备
+const handleRemoveFloppy = async (device) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要移除软盘设备 ${device} 吗？`,
+      '移除软盘',
+      { type: 'warning' }
+    )
+    await removeFloppy(form.name, device)
+    ElMessage.success('软盘已移除')
     refreshEditDisks()
   } catch {}
 }
@@ -4959,6 +5081,7 @@ const submitForm = async () => {
             os_variant: form.os_variant,
             iso_path: form.iso_path,
             iso_paths: form.iso_paths.filter(Boolean),
+            floppy_image: form.floppy_image || '',
             switch_id: nicsPayload.primarySwitchId,
             security_group_id: nicsPayload.primarySecurityGroupId,
             storage_pool_id: form.storage_pool_id,

@@ -27,6 +27,7 @@ type CreateVMParams struct {
 	OSVariant       string                         `json:"os_variant,omitempty"`
 	ISOPath         string                         `json:"iso_path,omitempty"`
 	ISOPaths        []string                       `json:"iso_paths,omitempty"`
+	FloppyImage     string                         `json:"floppy_image,omitempty"`
 	Network         string                         `json:"network,omitempty"`
 	NicModel        string                         `json:"nic_model,omitempty"` // 网卡模型: virtio/e1000e/rtl8139
 	Autostart       bool                           `json:"autostart,omitempty"`
@@ -565,6 +566,21 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 					progressFn(95, fmt.Sprintf("设置额外磁盘 %d IOPS 限制失败: %s", i+1, err.Error()))
 				}
 			}
+		}
+	}
+
+	// 挂载软盘镜像（如果用户指定了）
+	if strings.TrimSpace(params.FloppyImage) != "" {
+		progressFn(95, "挂载软盘镜像...")
+		if _, err := os.Stat(params.FloppyImage); err == nil {
+			floppyErr := D.ChangeFloppy(params.Name, params.FloppyImage, "", true)
+			if floppyErr != nil {
+				progressFn(95, fmt.Sprintf("挂载软盘失败: %s", floppyErr.Error()))
+			} else {
+				progressFn(98, "软盘镜像已挂载")
+			}
+		} else {
+			progressFn(95, fmt.Sprintf("软盘镜像文件不存在: %s", params.FloppyImage))
 		}
 	}
 

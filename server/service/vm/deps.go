@@ -50,6 +50,7 @@ type Deps struct {
 	CheckVMSnapshotSafety func(vmName string) (bool, []string, error)
 	GetDiskFilePath       func(vmName, device string) string
 	ListDisks             func(vmName string) ([]DiskInfo, error)
+	ChangeFloppy          func(vmName, imagePath, device string, forceNew bool) error
 
 	// ---- Rescue ----
 	IsInRescueMode func(vmName string) bool
