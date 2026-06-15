@@ -420,17 +420,17 @@ func RemoveDisk(vmName, device string, deleteFile bool) error {
 		detachFlags = 3 // VIR_DOMAIN_DEVICE_MODIFY_LIVE | VIR_DOMAIN_DEVICE_MODIFY_CONFIG
 	}
 	if err := libvirt_rpc.DetachDeviceFlagsRPC(vmName, fullDiskXML, detachFlags); err != nil {
-		return fmt.Errorf("分离磁盘失败: %w", err)
+		return fmt.Errorf("分离磁盘 %s 失败: %w", device, err)
 	}
 
 	// verify the disk has been removed (only for running VMs, where detach is async)
 	if vmState == "running" {
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 10; i++ {
 			time.Sleep(time.Second)
 			if !DiskDeviceExists(vmName, device) {
 				break
 			}
-			if i == 4 {
+			if i == 9 {
 				return fmt.Errorf("热删除磁盘超时: 设备 %s 仍然存在", device)
 			}
 		}

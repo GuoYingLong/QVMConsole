@@ -21,7 +21,7 @@ type LinkedCloneVmRequest struct {
 	CloneMode           string                          `json:"clone_mode"`
 	VCPU                int                             `json:"vcpu" binding:"required"`
 	RAM                 int                             `json:"ram" binding:"required"`
-	DiskSize            int                             `json:"disk_size"`
+	DiskSize            *int                            `json:"disk_size"`
 	Autostart           bool                            `json:"autostart"`
 	Freeze              bool                            `json:"freeze"`
 	APIC                *bool                           `json:"apic"`
@@ -75,17 +75,21 @@ func LinkedCloneVm(c *gin.Context) {
 		return
 	}
 
-	diskSize, err := service.ResolveCloneDiskSizeGB(req.Template, req.DiskSize)
+	// 显式传 0 或负数应被拒绝
+	requestedDiskSize := 0
+	if req.DiskSize != nil {
+		if *req.DiskSize <= 0 {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"code": 422, "message": "磁盘大小必须大于0GB"})
+			return
+		}
+		requestedDiskSize = *req.DiskSize
+	}
+	diskSize, err := service.ResolveCloneDiskSizeGB(req.Template, requestedDiskSize)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
 			"message": err.Error(),
 		})
-		return
-	}
-
-	// 同步校验: resolve后的磁盘大小必须 > 0
-	if !validateDiskSize(c, diskSize) {
 		return
 	}
 

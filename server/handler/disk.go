@@ -45,6 +45,12 @@ func DeleteDisk(c *gin.Context) {
 		return
 	}
 
+	// VM 存在性检查
+	if !service.DomainExists(name) {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "虚拟机不存在"})
+		return
+	}
+
 	var req DeleteDiskRequest
 	c.ShouldBindJSON(&req)
 	if req.DeleteFile {

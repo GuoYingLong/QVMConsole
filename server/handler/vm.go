@@ -365,6 +365,10 @@ func EditVm(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"code": 409, "message": err.Error()})
 		return
 	}
+	if !service.DomainExists(name) {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "message": "虚拟机不存在"})
+		return
+	}
 
 	var req VmEditRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

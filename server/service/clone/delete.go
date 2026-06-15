@@ -79,6 +79,41 @@ func DeleteVMWithDisks(name string, deleteDisks []string, transferDisks []string
 		}
 	}
 
+	// 补充扫描：根据已知磁盘路径的目录，按 VM 名称前缀查找遗漏的磁盘/快照文件
+	if len(allDiskPaths) > 0 {
+		scannedDirs := make(map[string]bool)
+		for _, p := range allDiskPaths {
+			dir := filepath.Dir(p)
+			if scannedDirs[dir] {
+				continue
+			}
+			scannedDirs[dir] = true
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				continue
+			}
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				// 匹配 "vmname." 前缀的文件（如 vmname.qcow2, vmname.snapshot-name）
+				if strings.HasPrefix(e.Name(), name+".") {
+					fullPath := filepath.Join(dir, e.Name())
+					found := false
+					for _, existing := range allDiskPaths {
+						if existing == fullPath {
+							found = true
+							break
+						}
+					}
+					if !found {
+						allDiskPaths = append(allDiskPaths, fullPath)
+					}
+				}
+			}
+		}
+	}
+
 	// 弹出 cdrom
 	utils.ExecShell(fmt.Sprintf("virsh change-media %s hda --eject 2>/dev/null || true", utils.ShellSingleQuote(name)))
 
