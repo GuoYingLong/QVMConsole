@@ -3118,6 +3118,8 @@ const ensureTemplateDefaults = () => {
   }
   if (isTemplateSourceMode.value && isWindowsTemplate.value) {
     form.import_user = windowsTemplateUsername
+  } else if (isTemplateSourceMode.value && selectedTemplate.value?.template_user && !form.import_user) {
+    form.import_user = selectedTemplate.value.template_user
   } else {
     form.first_boot_reboot_mode = 'normal'
   }
@@ -3928,6 +3930,8 @@ const onTemplateChange = async (templateName) => {
     }
     if (tpl.type === 'windows') {
       form.import_user = windowsTemplateUsername
+    } else if (tpl.template_user) {
+      form.import_user = tpl.template_user
     }
     normalizeMemoryBackendForGuest()
     ensureTemplateDefaults()

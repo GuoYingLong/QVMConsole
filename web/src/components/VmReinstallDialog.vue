@@ -301,6 +301,8 @@ function resetForm(vm = {}) {
 function applyTemplateDefaults() {
   if (isWindowsTemplate.value) {
     form.user = windowsTemplateUsername
+  } else if (selectedTemplate.value?.template_user) {
+    form.user = selectedTemplate.value.template_user
   } else if (!form.user) {
     form.user = ''
   }
