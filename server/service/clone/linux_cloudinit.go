@@ -131,8 +131,8 @@ func prepareLinuxNoCloudInit(params *CloneParams, cloneDisk string) error {
 			)
 			args = append(args, "--run-command", createCmd)
 		}
-		// 为新/重命名后的用户设置密码
-		if params.Password != "" {
+		// 为新/重命名后的用户设置密码（若与 templateUser 相同则已在上方设置过，跳过避免 virt-customize 报重复错误）
+		if params.Password != "" && params.User != templateUser {
 			args = append(args, "--password", params.User+":password:"+params.Password)
 		}
 	}
@@ -153,13 +153,32 @@ func buildNoCloudMetaData(params *CloneParams) string {
 }
 
 // buildNoCloudUserData 生成 cloud-init user-data cloud-config 内容
-// 仅负责 hostname 确认 + 磁盘自动扩容；密码/用户名已在 virt-customize 阶段离线处理
+// 负责 hostname 确认 + 用户密码解锁 + 磁盘自动扩容；密码/用户名已在 virt-customize 阶段离线写入 /etc/shadow
 func buildNoCloudUserData(params *CloneParams) string {
 	var sb strings.Builder
 	sb.WriteString("#cloud-config\n\n")
 	sb.WriteString(fmt.Sprintf("hostname: %s\n", params.Hostname))
 	sb.WriteString("manage_etc_hosts: true\n\n")
 	sb.WriteString("ssh_pwauth: true\n\n")
+
+	// 防止 cloud-init 重新锁定用户密码
+	// Ubuntu 等发行版 cloud.cfg 中 default_user 设置 lock_passwd: true，
+	// 首次启动时 cloud-init 会在 /etc/shadow 密码哈希前添加 '!' 导致无法登录
+	// 此处显式声明 lock_passwd: false，确保 virt-customize 离线设置的密码不被覆盖
+	targetUser := params.User
+	if targetUser == "" || targetUser == "root" {
+		targetUser = params.TemplateUser
+	}
+	if targetUser != "" && targetUser != "root" {
+		sb.WriteString("users:\n")
+		sb.WriteString(fmt.Sprintf("  - name: %s\n", targetUser))
+		sb.WriteString("    lock_passwd: false\n")
+		sb.WriteString("    shell: /bin/bash\n")
+		sb.WriteString("    sudo: ALL=(ALL) NOPASSWD:ALL\n\n")
+	}
+
+	sb.WriteString("chpasswd:\n  expire: false\n\n")
+
 	// growpart 对普通分区有效；对 LVM 系统由下方 runcmd 补充处理
 	sb.WriteString("growpart:\n  mode: auto\n  devices: ['/']\nresize_rootfs: true\n\n")
 	sb.WriteString("runcmd:\n")
