@@ -87,6 +87,7 @@ func BatchCloneVM(ctx context.Context, params *BatchCloneParams, progressFn func
 				SwitchID:            params.SwitchID,
 				SecurityGroupID:     params.SecurityGroupID,
 				IsAdmin:             params.IsAdmin,
+				DisableSystemInit:   params.DisableSystemInit,
 			}
 
 			subProgress := func(_ int, msg string) {

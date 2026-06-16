@@ -65,7 +65,8 @@ type CloneVmRequest struct {
 	NicModel             string                            `json:"nic_model"`
 	PreserveFnOSDeviceID bool                              `json:"preserve_fnos_device_id"`
 	FnOSDeviceID         string                            `json:"fnos_device_id"`
-	SystemDiskIOPS       *service.DiskIOPSTune             `json:"system_disk_iops"` // 系统盘 IOPS 限制（仅管理员）
+	SystemDiskIOPS       *service.DiskIOPSTune             `json:"system_disk_iops"`    // 系统盘 IOPS 限制（仅管理员）
+	DisableSystemInit    bool                              `json:"disable_system_init"` // 禁用系统初始化（跳过凭据校验和来宾系统修改）
 }
 
 // BatchCloneRequest 批量克隆请求
@@ -104,6 +105,7 @@ type BatchCloneRequest struct {
 	SwitchID            uint                            `json:"switch_id"`         // VPC 交换机 ID
 	SecurityGroupID     uint                            `json:"security_group_id"` // 安全组 ID
 	ExtraNics           []service.AddVMInterfaceRequest `json:"extra_nics"`
+	DisableSystemInit   bool                            `json:"disable_system_init"` // 禁用系统初始化
 }
 
 // ReinstallRequest 重装系统请求
@@ -159,7 +161,7 @@ func CloneVm(c *gin.Context) {
 	if meta != nil {
 		cloudInitMode = strings.ToLower(strings.TrimSpace(meta.CloudInitMode))
 	}
-	requireCredentials := cloudInitMode != "none"
+	requireCredentials := cloudInitMode != "none" && !req.DisableSystemInit
 	if err := clonepkg.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, requireCredentials); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -244,6 +246,7 @@ func CloneVm(c *gin.Context) {
 	}
 
 	params.IsAdmin = isAdmin
+	params.DisableSystemInit = req.DisableSystemInit
 	if !isAdmin {
 		params.MemoryDynamic = sanitizeUserMemoryDynamicRequest(req.MemoryDynamic, req.RAM)
 	}
@@ -394,6 +397,7 @@ func BatchCloneVm(c *gin.Context) {
 		SecurityGroupID:     req.SecurityGroupID,
 		ExtraNics:           req.ExtraNics,
 		IsAdmin:             isAdmin,
+		DisableSystemInit:   req.DisableSystemInit,
 	}
 
 	username, _ := c.Get("username")

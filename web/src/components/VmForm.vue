@@ -561,12 +561,6 @@
               <div class="mode-card-title">从模板快速克隆</div>
               <div class="mode-card-desc">基于预配置模板秒级创建，适合批量部署</div>
             </div>
-            <div v-if="isAdmin" class="mode-card-new" :class="{ selected: form.create_mode === 'linked_clone' }" @click="selectMode('linked_clone')">
-              <div class="mode-card-check"><FormIcons icon="check" :size="16" /></div>
-              <div class="mode-card-icon"><FormIcons icon="mode-link" :size="40" /></div>
-              <div class="mode-card-title">原生链式克隆</div>
-              <div class="mode-card-desc">直接基于模板生成 backing 磁盘并启动，不修改来宾系统</div>
-            </div>
             <div class="mode-card-new" :class="{ selected: form.create_mode === 'import' }" @click="selectMode('import')">
               <div class="mode-card-check"><FormIcons icon="check" :size="16" /></div>
               <div class="mode-card-icon"><FormIcons icon="mode-import" :size="40" /></div>
@@ -589,10 +583,10 @@
               <el-input v-model="form.name" placeholder="默认自动生成，也可手动修改">
                 <template #append><el-button @click="handleGenerateVmName">随机生成</el-button></template>
               </el-input>
-              <div class="form-tip" v-if="!isTemplateSourceMode || isLinkedCloneMode || form.batch_count <= 1"><el-icon><InfoFilled /></el-icon>名称仅支持字母、数字和短横线，且不能以短横线开头或结尾，例如 "web01" 或 "vm-2026"</div>
+              <div class="form-tip" v-if="!isTemplateSourceMode || disableSystemInit || form.batch_count <= 1"><el-icon><InfoFilled /></el-icon>名称仅支持字母、数字和短横线，且不能以短横线开头或结尾，例如 "web01" 或 "vm-2026"</div>
               <div class="form-tip" v-else><el-icon><InfoFilled /></el-icon>批量模式下名称将作为前缀，最终命名为 {{ form.name || 'vm' }}-01, {{ form.name || 'vm' }}-02...</div>
             </el-form-item>
-            <el-form-item v-if="isTemplateSourceMode && !isLinkedCloneMode" label="创建数量">
+            <el-form-item v-if="isTemplateSourceMode && !disableSystemInit" label="创建数量">
               <el-input-number v-model="form.batch_count" :min="1" :max="100" style="width: 100%;" />
               <div class="form-tip" v-if="form.batch_count > 1">
                 <el-icon><InfoFilled /></el-icon>
@@ -634,6 +628,57 @@
                   </el-option-group>
                 </el-select>
               </el-form-item>
+
+              <!-- 导入模式：系统初始化 -->
+              <template v-if="form.create_mode === 'import'">
+                <el-form-item label="系统初始化">
+                  <el-switch v-model="form.system_init_enabled" active-text="是" inactive-text="否" />
+                  <div class="form-tip" v-if="form.system_init_enabled">
+                    <el-icon><InfoFilled /></el-icon>
+                    导入后将注入主机名、用户名和密码，完成系统初始化
+                  </div>
+                  <div class="form-tip" v-else>
+                    <el-icon><InfoFilled /></el-icon>
+                    仅导入磁盘并创建虚拟机定义，不进行系统初始化
+                  </div>
+                </el-form-item>
+                <template v-if="form.system_init_enabled">
+                  <el-form-item label="系统分类">
+                    <el-select v-model="form.import_os_category" placeholder="选择系统分类" style="width: 100%;" clearable>
+                      <el-option-group v-for="group in importCategoryOptions" :key="group.label" :label="group.label">
+                        <el-option v-for="cat in group.options" :key="cat" :label="cat" :value="cat" />
+                      </el-option-group>
+                    </el-select>
+                  </el-form-item>
+                  <div class="form-section-card">
+                    <div class="form-section-card-header">
+                      <el-icon><User /></el-icon>
+                      <span>登录凭据</span>
+                    </div>
+                    <div class="form-section-card-body">
+                      <el-row :gutter="20">
+                        <el-col :span="12">
+                          <el-form-item label="主机名" prop="hostname">
+                            <el-input v-model="form.hostname" placeholder="自动使用虚拟机名称">
+                              <template #append><el-button @click="handleGenerateTemplateHostname">随机生成</el-button></template>
+                            </el-input>
+                          </el-form-item>
+                        </el-col>
+                        <el-col :span="12">
+                          <el-form-item label="用户名">
+                            <el-input v-model="form.import_user" placeholder="请输入登录用户名" :disabled="form.os_type === 'windows'" />
+                          </el-form-item>
+                        </el-col>
+                      </el-row>
+                      <el-form-item label="密码">
+                        <el-input v-model="form.import_password" placeholder="请输入密码" type="password" show-password autocomplete="new-password" style="width: 100%;">
+                          <template #append><el-button @click="handleGenerateTemplatePassword">生成强密码</el-button></template>
+                        </el-input>
+                      </el-form-item>
+                    </div>
+                  </div>
+                </template>
+              </template>
             </template>
 
             <!-- 模板克隆：模板选择 + 磁盘 + 登录凭据 -->
@@ -709,6 +754,17 @@
                       将模板数据完整复制到独立磁盘，不依赖模板，脱离链式条件。磁盘创建较慢，占用完整磁盘空间。
                     </div>
                   </el-form-item>
+                  <el-form-item label="系统初始化">
+                    <el-switch v-model="form.system_init_enabled" active-text="是" inactive-text="否" />
+                    <div class="form-tip" v-if="form.system_init_enabled">
+                      <el-icon><InfoFilled /></el-icon>
+                      克隆后将注入主机名、用户名和密码，完成系统初始化
+                    </div>
+                    <div class="form-tip" v-else>
+                      <el-icon><InfoFilled /></el-icon>
+                      仅创建磁盘和虚拟机定义，不修改模板内的系统配置。登录凭据需使用模板中已有的账号
+                    </div>
+                  </el-form-item>
                 </div>
               </div>
               <el-alert
@@ -742,15 +798,15 @@
                   </div>
                 </div>
               </div>
-              <div v-else-if="isLinkedCloneMode" class="form-section-card">
+              <div v-else-if="disableSystemInit" class="form-section-card">
                 <div class="form-section-card-header">
                   <el-icon><InfoFilled /></el-icon>
-                  <span>原生链式克隆说明</span>
+                  <span>系统初始化说明</span>
                 </div>
                 <div class="form-section-card-body">
                   <el-alert type="warning" :closable="false" show-icon>
                     <template #title>
-                      该模式不会修改模板内的主机名、用户名、密码、machine-id 或网络配置，只会创建 backing qcow2、定义并启动虚拟机。
+                      已关闭系统初始化，将不会修改模板内的主机名、用户名、密码或网络配置，只会创建磁盘、定义并启动虚拟机。
                     </template>
                   </el-alert>
                 </div>
@@ -807,7 +863,7 @@
                   </el-alert>
                 </div>
               </div>
-              <div v-if="isFnOSTemplate && !isLinkedCloneMode" class="form-section-card">
+              <div v-if="isFnOSTemplate && !disableSystemInit" class="form-section-card">
                 <div class="form-section-card-header">
                   <el-icon><InfoFilled /></el-icon>
                   <span>FnOS 标识</span>
@@ -1006,7 +1062,7 @@
             <div class="step-pane-info">
               <div class="step-pane-title">存储介质</div>
               <div class="step-pane-desc" v-if="form.create_mode === 'iso'">选择 ISO 镜像并配置系统磁盘</div>
-              <div class="step-pane-desc" v-else-if="isTemplateSourceMode">{{ isLinkedCloneMode ? '选择模板并直接执行原生链式克隆' : '选择模板并配置克隆参数' }}</div>
+              <div class="step-pane-desc" v-else-if="isTemplateSourceMode">{{ disableSystemInit ? '选择模板并直接创建（跳过系统初始化）' : '选择模板并配置克隆参数' }}</div>
               <div class="step-pane-desc" v-else>选择要导入的磁盘文件</div>
             </div>
           </div>
@@ -1155,7 +1211,7 @@
             <template v-if="isTemplateSourceMode">
               <el-alert type="info" :closable="false" show-icon>
                 <template #title>
-                  {{ isLinkedCloneMode ? '原生链式克隆的模板与系统盘参数已在「基础信息」步骤中配置完成，可在下方追加数据盘。' : '模板克隆的系统盘和登录凭据已在「基础信息」步骤中配置完成，可在下方追加数据盘。' }}
+                  {{ disableSystemInit ? '已关闭系统初始化，模板与系统盘参数已在「基础信息」步骤中配置完成，可在下方追加数据盘。' : '模板克隆的系统盘和登录凭据已在「基础信息」步骤中配置完成，可在下方追加数据盘。' }}
                 </template>
               </el-alert>
               <div class="form-section-card" style="margin-top: 14px;">
@@ -2281,7 +2337,7 @@
 
 <script setup>
 import { ref, reactive, computed } from 'vue'
-import { updateVm, getVmXML, updateVmXML, createVm, cloneVm, linkedCloneVm, batchCloneVm, getTemplateList, getOSVariants, getVmDetail, getDiskList, resizeDisk, removeDisk, changeDiskBus, attachDisk, changeCDROM, ejectCDROM, removeCDROM, changeFloppy, ejectFloppy, removeFloppy, adminImportDisk, adminImportDiskForVM, getPassthroughDevices, getVmPassthroughDevices, bindPCIDevice } from '@/api/vm'
+import { updateVm, getVmXML, updateVmXML, createVm, cloneVm, batchCloneVm, getTemplateList, getOSVariants, getVmDetail, getDiskList, resizeDisk, removeDisk, changeDiskBus, attachDisk, changeCDROM, ejectCDROM, removeCDROM, changeFloppy, ejectFloppy, removeFloppy, adminImportDisk, adminImportDiskForVM, getPassthroughDevices, getVmPassthroughDevices, bindPCIDevice } from '@/api/vm'
 import { getAllISOs, getVMStorageTargets } from '@/api/infra'
 import { getUserISOs, selfCreateVm, importVM } from '@/api/storage'
 import { getStorageFiles } from '@/api/storage'
@@ -2292,7 +2348,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Top, Bottom, Delete, Plus, ArrowRight, Discount } from '@element-plus/icons-vue'
 import FormIcons from '@/components/icons/FormIcons.vue'
 import { useUserStore } from '@/store/user'
-import { templateCategoryLabel, templateGroupLabel } from '@/utils/templateCategory'
+import { templateCategoryLabel, templateGroupLabel, WINDOWS_TEMPLATE_CATEGORY_OPTIONS, LINUX_TEMPLATE_CATEGORY_OPTIONS } from '@/utils/templateCategory'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'admin')
@@ -2318,8 +2374,20 @@ const registrationContext = reactive({
   dedicated_vpc_label: ''
 })
 
-const isTemplateSourceMode = computed(() => form.create_mode === 'template' || form.create_mode === 'linked_clone')
-const isLinkedCloneMode = computed(() => form.create_mode === 'linked_clone')
+const isTemplateSourceMode = computed(() => form.create_mode === 'template')
+const disableSystemInit = computed(() => isTemplateSourceMode.value && !form.system_init_enabled)
+const disableImportSystemInit = computed(() => form.create_mode === 'import' && !form.system_init_enabled)
+
+// 导入模式系统分类选项（根据 os_type 动态变化）
+const importCategoryOptions = computed(() => {
+  if (form.os_type === 'windows') {
+    return [{ label: 'Windows Server', options: WINDOWS_TEMPLATE_CATEGORY_OPTIONS }]
+  }
+  if (form.os_type === 'linux') {
+    return [{ label: 'Linux 发行版', options: LINUX_TEMPLATE_CATEGORY_OPTIONS }]
+  }
+  return []
+})
 
 const useCase = ref('')
 const showSmartRecommend = ref(false)
@@ -2337,7 +2405,7 @@ const osLabel = computed(() => {
 
 const createModeLabel = computed(() => {
   if (registrationMode.value) return '轻量云注册'
-  const map = { iso: 'ISO 镜像安装', template: '模板克隆', linked_clone: '原生链式克隆', import: '导入磁盘' }
+  const map = { iso: 'ISO 镜像安装', template: '模板克隆', import: '导入磁盘' }
   const base = map[form.create_mode] || form.create_mode
   if (isTemplateSourceMode.value) {
     const modeLabel = form.clone_mode === 'full' ? '（完整克隆）' : '（链式克隆）'
@@ -2366,8 +2434,8 @@ const allRequiredFilled = computed(() => {
     }
   } else if (isTemplateSourceMode.value) {
     if (!form.template || form.disk_size <= 0) return false
-    if (!registrationMode.value && !isLinkedCloneMode.value && !isNoInitTemplate.value && (!form.import_user || (!form.import_password && form.batch_count <= 1))) return false
-    if (isFnOSTemplate.value && !isLinkedCloneMode.value && form.fnos_device_id_mode === 'custom' && !hasCustomFnOSDeviceID.value) return false
+    if (!registrationMode.value && !disableSystemInit.value && !isNoInitTemplate.value && (!form.import_user || (!form.import_password && form.batch_count <= 1))) return false
+    if (isFnOSTemplate.value && !disableSystemInit.value && form.fnos_device_id_mode === 'custom' && !hasCustomFnOSDeviceID.value) return false
   }
   return true
 })
@@ -2389,11 +2457,11 @@ const allRequiredTip = computed(() => {
   } else if (isTemplateSourceMode.value) {
     if (!form.template) missing.push('模板')
     if (form.disk_size <= 0) missing.push('磁盘大小')
-    if (!registrationMode.value && !isLinkedCloneMode.value && !isNoInitTemplate.value) {
+    if (!registrationMode.value && !disableSystemInit.value && !isNoInitTemplate.value) {
       if (!form.import_user) missing.push('用户名')
       if (!form.import_password && form.batch_count <= 1) missing.push('密码')
     }
-    if (isFnOSTemplate.value && !isLinkedCloneMode.value && form.fnos_device_id_mode === 'custom' && !hasCustomFnOSDeviceID.value) {
+    if (isFnOSTemplate.value && !disableSystemInit.value && form.fnos_device_id_mode === 'custom' && !hasCustomFnOSDeviceID.value) {
       missing.push('FnOS 设备 ID')
     }
   }
@@ -2562,9 +2630,9 @@ const templatePasswordTip = computed(() => {
   return baseTip
 })
 const normalizedFnOSDeviceID = computed(() => `${form.fnos_device_id || ''}`.trim())
-const hasCustomFnOSDeviceID = computed(() => isFnOSTemplate.value && !isLinkedCloneMode.value && fnosDeviceIdPattern.test(normalizedFnOSDeviceID.value))
+const hasCustomFnOSDeviceID = computed(() => isFnOSTemplate.value && !disableSystemInit.value && fnosDeviceIdPattern.test(normalizedFnOSDeviceID.value))
 const shouldPreserveFnOSDeviceID = computed(() => {
-  if (!isFnOSTemplate.value || isLinkedCloneMode.value) return false
+  if (!isFnOSTemplate.value || disableSystemInit.value) return false
   return form.fnos_device_id_mode === 'preserve' || form.fnos_device_id_mode === 'custom' || hasCustomFnOSDeviceID.value
 })
 const vmNameCharset = 'abcdefghijklmnopqrstuvwxyz0123456789'
@@ -3173,7 +3241,7 @@ const nextStep = async () => {
     const fieldsToValidate = ['name']
     if (isTemplateSourceMode.value) {
       fieldsToValidate.push('template', 'disk_size')
-      if (!registrationMode.value && !isLinkedCloneMode.value) {
+      if (!registrationMode.value && !disableSystemInit.value) {
         fieldsToValidate.push('hostname')
         if (!isNoInitTemplate.value) {
           fieldsToValidate.push('import_user', 'import_password')
@@ -3181,7 +3249,7 @@ const nextStep = async () => {
       } else if (registrationMode.value) {
         fieldsToValidate.push('hostname')
       }
-      if (isFnOSTemplate.value && !isLinkedCloneMode.value && form.fnos_device_id_mode === 'custom') {
+      if (isFnOSTemplate.value && !disableSystemInit.value && form.fnos_device_id_mode === 'custom') {
         fieldsToValidate.push('fnos_device_id')
       }
     }
@@ -3346,8 +3414,10 @@ const form = reactive({
   disk_size: 20,
   // 创建模式
   create_mode: 'iso',  // iso / import
-  // 克隆模式（仅在 template / linked_clone 模式下生效）
+  // 克隆模式（仅在 template 模式下生效）
   clone_mode: 'linked',  // linked（链式克隆，默认）/ full（完整克隆）
+  // 系统初始化开关（仅在 template / import 模式下生效）
+  system_init_enabled: true,
   // 普通创建模式字段
   os_type: 'linux',
   os_variant: '',
@@ -3414,6 +3484,7 @@ const form = reactive({
   copy_disk: false,
   start_after_import: true,  // 导入完成后是否开启虚拟机
   extra_import_disks: [],  // 额外导入磁盘列表
+  import_os_category: '',  // 导入模式系统分类（Ubuntu/Debian/CentOS/WindowsServer2025等）
   hostname: '',
   import_user: '',
   import_password: '',
@@ -3624,14 +3695,14 @@ const createRules = computed(() => {
       },
       trigger: 'change'
     }]
-    if (!isLinkedCloneMode.value || registrationMode.value) {
+    if (!disableSystemInit.value || registrationMode.value) {
       base.hostname = [{ validator: validateTemplateHostname, trigger: 'blur' }]
     }
-    if (!registrationMode.value && !isLinkedCloneMode.value && !isNoInitTemplate.value) {
+    if (!registrationMode.value && !disableSystemInit.value && !isNoInitTemplate.value) {
       base.import_user = [{ validator: validateTemplateUsername, trigger: 'blur' }]
       base.import_password = [{ validator: validateTemplatePassword, trigger: 'blur' }]
     }
-    if (isFnOSTemplate.value && !isLinkedCloneMode.value && form.fnos_device_id_mode === 'custom') {
+    if (isFnOSTemplate.value && !disableSystemInit.value && form.fnos_device_id_mode === 'custom') {
       base.fnos_device_id = [{
         validator: (_rule, value, callback) => {
           if (!fnosDeviceIdPattern.test(value || '')) {
@@ -3888,10 +3959,11 @@ const onCreateModeChange = (mode) => {
     form.disk_path = ''
     form.extra_import_disks = []
     loadDiskFiles()
-  } else if (mode === 'template' || mode === 'linked_clone') {
+  } else if (mode === 'template') {
     form.boot_order = ['hd']
     form.disk_size = templateMinDiskSize.value || 0
     form.clone_mode = 'linked'
+    form.system_init_enabled = true
     ensureTemplateDefaults()
     loadTemplates(true)
   } else {
@@ -3899,7 +3971,7 @@ const onCreateModeChange = (mode) => {
     form.disk_path = ''
 
   }
-  if (mode === 'template' || mode === 'linked_clone') {
+  if (mode === 'template') {
     applyRTCOffsetRecommendation(form.template_type === 'windows' ? 'windows' : 'linux')
     applyVideoModelRecommendation(form.template_type === 'windows' ? 'windows' : 'linux')
     normalizeMemoryBackendForGuest()
@@ -4284,7 +4356,7 @@ const open = async (row, mode, options = {}) => {
     currentVmUUID.value = ''
     Object.assign(form, {
       name: generateRandomVmName(), remark: '', vcpu: 2, memory: 2, ram: 2,
-      disk_size: (mode === 'template' || mode === 'linked_clone' || registrationMode.value) ? 0 : 20, create_mode: mode === 'import' ? 'import' : (mode === 'template' || mode === 'linked_clone' || registrationMode.value) ? (mode === 'linked_clone' ? 'linked_clone' : 'template') : 'iso',
+      disk_size: (mode === 'template' || registrationMode.value) ? 0 : 20, create_mode: mode === 'import' ? 'import' : (mode === 'template' || registrationMode.value) ? 'template' : 'iso',
       os_type: 'linux', os_variant: '', disk_format: 'qcow2', disk_bus: 'virtio',
       system_disk_iops_total: 0, system_disk_iops_read: 0, system_disk_iops_write: 0,
       iso_path: '', iso_paths: [], floppy_image: '', switch_id: registrationContext.dedicated_vpc_switch_id || null, security_group_id: null, nic_model: 'virtio', video_model: 'virtio', cpu_topology_mode: 'auto', first_boot_reboot_mode: 'normal', autostart: false, freeze: false, apic: true, pae: true, rtc_offset: 'utc', rtc_startdate: 'now',
@@ -4303,6 +4375,7 @@ const open = async (row, mode, options = {}) => {
       import_user: '', import_password: '', template_root_pass: '', template_user: '',
       template: '', template_type: '', preserve_fnos_device_id: false, fnos_device_id_mode: 'regenerate', fnos_device_id: '',
       traffic_down_gb: 0, traffic_up_gb: 0, bandwidth_down_mbps: 0, bandwidth_up_mbps: 0, max_port_forwards: 10, max_runtime_hours: 0, batch_count: 1,
+      import_os_category: '', system_init_enabled: true,
     })
     Object.assign(form.guest_agent, createEmptyGuestAgentConfig())
     Object.assign(form.smbios1, createEmptySMBIOS1Config())
@@ -4312,7 +4385,7 @@ const open = async (row, mode, options = {}) => {
     loadStorageTargets(mode !== 'import')
     if (mode === 'import') {
       loadDiskFiles()
-    } else if (mode === 'template' || mode === 'linked_clone' || registrationMode.value) {
+    } else if (mode === 'template' || registrationMode.value) {
       loadTemplates(true)
     }
   }
@@ -4805,8 +4878,10 @@ const submitForm = async () => {
               switch_id: nicsPayload.primarySwitchId,
               security_group_id: nicsPayload.primarySecurityGroupId,
               copy_disk: form.copy_disk,
-              hostname: form.hostname || form.name,
-              user: form.import_user, password: form.import_password,
+              hostname: form.system_init_enabled ? (form.hostname || form.name) : '',
+              user: form.system_init_enabled ? form.import_user : '',
+              password: form.system_init_enabled ? form.import_password : '',
+              init_type: form.system_init_enabled ? form.os_type : '',
               template_root_pass: form.template_root_pass, template_user: form.template_user,
               autostart: form.autostart, freeze: form.freeze,
               start_after_import: form.start_after_import,
@@ -4854,9 +4929,10 @@ const submitForm = async () => {
             switch_id: nicsPayload.primarySwitchId,
             security_group_id: nicsPayload.primarySecurityGroupId,
             copy_disk: form.copy_disk,
-            hostname: form.hostname || form.name,
-            user: form.import_user,
-            password: form.import_password,
+            hostname: form.system_init_enabled ? (form.hostname || form.name) : '',
+            user: form.system_init_enabled ? form.import_user : '',
+            password: form.system_init_enabled ? form.import_password : '',
+            init_type: form.system_init_enabled ? form.os_type : '',
             template_user: form.template_user,
             autostart: form.autostart,
             freeze: form.freeze,
@@ -4887,58 +4963,6 @@ const submitForm = async () => {
           await importVM(importPayload)
           ElMessage.success('导入任务已提交，请在任务中查看进度')
           }
-        } else if (form.create_mode === 'linked_clone') {
-          ensureTemplateDefaults()
-          const linkedClonePayload = {
-            name: form.name,
-            remark: form.remark,
-            template: form.template,
-            template_type: form.template_type,
-            clone_mode: form.clone_mode,
-            vcpu: form.vcpu,
-            max_vcpu: cpuHotplugMaxVCPU.value,
-            ram: form.ram,
-            disk_size: form.disk_size,
-            switch_id: nicsPayload.primarySwitchId,
-            security_group_id: nicsPayload.primarySecurityGroupId,
-            storage_pool_id: form.storage_pool_id,
-            autostart: form.autostart,
-            freeze: form.freeze,
-            apic: !!form.apic,
-            pae: !!form.pae,
-            rtc_offset: form.rtc_offset,
-            rtc_startdate: normalizeRTCStartDate(form.rtc_startdate),
-            guest_agent: buildGuestAgentPayload(),
-            smbios1: buildSMBIOS1Payload(),
-            boot_type: form.boot_type,
-            disk_bus: form.disk_bus,
-            nic_model: form.nic_model,
-            video_model: form.video_model,
-            cpu_topology_mode: form.cpu_topology_mode,
-            first_boot_reboot_mode: form.first_boot_reboot_mode,
-            extra_nics: nicsPayload.extraNics,
-            extra_disks: form.extra_disks.filter(d => d.size > 0).map(d => ({
-              size: d.size,
-              format: d.format,
-              bus: d.bus,
-              storage_pool_id: d.storage_pool_id,
-              iops_total: d.iops_total || 0,
-              iops_read: d.iops_read || 0,
-              iops_write: d.iops_write || 0,
-            })),
-            host_devices: form.host_devices,
-            pcie_root_ports: form.pcie_root_ports,
-          }
-          const cpuLimitPercent = buildCPULimitPercentPayload()
-          if (cpuLimitPercent !== undefined) {
-            linkedClonePayload.cpu_limit_percent = cpuLimitPercent
-          }
-          const memoryPayload = buildMemoryDynamicPayload()
-          if (memoryPayload) {
-            linkedClonePayload.memory_dynamic = memoryPayload
-          }
-          await linkedCloneVm(linkedClonePayload)
-          ElMessage.success('原生链式克隆任务已提交，请在任务中查看进度')
         } else if (form.create_mode === 'template') {
           ensureTemplateDefaults()
 
@@ -4960,8 +4984,9 @@ const submitForm = async () => {
               ram: form.ram,
               disk_size: form.disk_size,
               hostname: '', // 批量模式下每台虚拟机由后端自动生成独立主机名
-              user: isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim(),
-              password: form.import_password,
+              user: form.system_init_enabled ? (isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim()) : '',
+              password: form.system_init_enabled ? form.import_password : '',
+              disable_system_init: !form.system_init_enabled || undefined,
               autostart: form.autostart,
               freeze: form.freeze,
               apic: !!form.apic,
@@ -4971,7 +4996,7 @@ const submitForm = async () => {
               guest_agent: buildGuestAgentPayload(),
               smbios1: buildSMBIOS1Payload(),
               uefi: (form.boot_type === 'uefi' || form.boot_type === 'uefi-secure') ? true : undefined,
-              template_user: isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim(),
+              template_user: form.system_init_enabled ? (isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim()) : '',
               video_model: form.video_model,
               disk_bus: form.disk_bus,
               nic_model: form.nic_model,
@@ -5003,9 +5028,10 @@ const submitForm = async () => {
             max_vcpu: cpuHotplugMaxVCPU.value,
             ram: form.ram,
             disk_size: form.disk_size,
-            hostname: form.hostname,
-            user: isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim(),
-            password: form.import_password,
+            hostname: form.system_init_enabled ? form.hostname : '',
+            user: form.system_init_enabled ? (isWindowsTemplate.value ? windowsTemplateUsername : form.import_user.trim()) : '',
+            password: form.system_init_enabled ? form.import_password : '',
+            disable_system_init: !form.system_init_enabled || undefined,
             switch_id: nicsPayload.primarySwitchId,
             security_group_id: nicsPayload.primarySecurityGroupId,
             storage_pool_id: form.storage_pool_id,

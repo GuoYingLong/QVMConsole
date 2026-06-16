@@ -57,8 +57,9 @@ type CloneParams struct {
 	FnOSDeviceID          string                         `json:"fnos_device_id,omitempty"`
 	SystemDiskIOPS        *DiskIOPSTune                  `json:"system_disk_iops,omitempty"` // 系统盘 IOPS 限制
 	IsAdmin               bool                           `json:"is_admin,omitempty"`
-	LinuxIdentityPrepared bool                           `json:"-"`                         // Linux 首次启动前是否已离线重置 machine-id/DHCP 身份
-	PCIERootPorts         int                            `json:"pcie_root_ports,omitempty"` // q35 预留 pcie-root-port 数量
+	DisableSystemInit     bool                           `json:"disable_system_init,omitempty"` // 禁用系统初始化（跳过凭据校验和来宾系统修改）
+	LinuxIdentityPrepared bool                           `json:"-"`                             // Linux 首次启动前是否已离线重置 machine-id/DHCP 身份
+	PCIERootPorts         int                            `json:"pcie_root_ports,omitempty"`     // q35 预留 pcie-root-port 数量
 }
 
 // BatchCloneParams 批量克隆参数
@@ -99,7 +100,8 @@ type BatchCloneParams struct {
 	SwitchID            uint                       `json:"switch_id,omitempty"`              // VPC 交换机 ID
 	SecurityGroupID     uint                       `json:"security_group_id,omitempty"`      // 安全组 ID
 	ExtraNics           []AddVMInterfaceRequest    `json:"extra_nics,omitempty"`
-	IsAdmin             bool                       `json:"is_admin,omitempty"` // 是否管理员
+	IsAdmin             bool                       `json:"is_admin,omitempty"`            // 是否管理员
+	DisableSystemInit   bool                       `json:"disable_system_init,omitempty"` // 禁用系统初始化
 }
 
 // ReinstallParams 重装系统参数

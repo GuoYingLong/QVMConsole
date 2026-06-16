@@ -215,6 +215,7 @@ type SelfCloneVmRequest struct {
 	NicModel             string                            `json:"nic_model"`
 	PreserveFnOSDeviceID bool                              `json:"preserve_fnos_device_id"`
 	FnOSDeviceID         string                            `json:"fnos_device_id"`
+	DisableSystemInit    bool                              `json:"disable_system_init"` // 禁用系统初始化
 }
 
 // SelfCloneVm 用户自助从模板克隆VM
@@ -261,7 +262,7 @@ func SelfCloneVm(c *gin.Context) {
 	if meta != nil {
 		cloudInitMode = strings.ToLower(strings.TrimSpace(meta.CloudInitMode))
 	}
-	requireCredentials := cloudInitMode != "none"
+	requireCredentials := cloudInitMode != "none" && !req.DisableSystemInit
 	if err := service.ValidateCloneCredentialsForTemplate(templateType, req.Hostname, req.User, req.Password, requireCredentials); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code":    400,
@@ -354,6 +355,7 @@ func SelfCloneVm(c *gin.Context) {
 		PreserveFnOSDeviceID: req.PreserveFnOSDeviceID,
 		FnOSDeviceID:         req.FnOSDeviceID,
 		IsAdmin:              false,
+		DisableSystemInit:    req.DisableSystemInit,
 	}
 
 	task, err := taskqueue.SubmitWithStruct(model.TaskTypeClone, params, usernameStr)

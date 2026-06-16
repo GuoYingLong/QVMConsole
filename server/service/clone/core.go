@@ -137,7 +137,7 @@ func CloneVM(ctx context.Context, params *CloneParams, progressFn func(int, stri
 	isWindows := tplType == "windows"
 	isFnOS := tplType == "fnos"
 	isOther := tplType == "other"
-	isNoInit := meta != nil && strings.ToLower(strings.TrimSpace(meta.CloudInitMode)) == "none"
+	isNoInit := (meta != nil && strings.ToLower(strings.TrimSpace(meta.CloudInitMode)) == "none") || params.DisableSystemInit
 
 	// 克隆前存储空间预检查
 	if err := D.CheckStorageSpace(filepath.Dir(cloneDisk), int64(params.DiskSize)*1024+1024); err != nil {
