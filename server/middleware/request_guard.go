@@ -12,10 +12,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// largeBodyPaths 允许大请求体的路径（精确匹配）
 var largeBodyPaths = []string{
 	"/api/template/import",
-	"/api/vm/export",
-	"/api/vm/import",
+	"/api/template/import/preview",
+	"/api/self/vm/import",
+	"/api/self/vm/export",
+}
+
+// largeBodyPrefixes 允许大请求体的路径前缀（用于动态路径参数的接口，如文件上传 /api/self/storage/upload/:category）
+var largeBodyPrefixes = []string{
+	"/api/self/storage/upload/",
 }
 
 func RequestGuardMiddleware() gin.HandlerFunc {
@@ -32,6 +39,14 @@ func RequestGuardMiddleware() gin.HandlerFunc {
 			if c.Request.URL.Path == p {
 				isLargePath = true
 				break
+			}
+		}
+		if !isLargePath {
+			for _, prefix := range largeBodyPrefixes {
+				if strings.HasPrefix(c.Request.URL.Path, prefix) {
+					isLargePath = true
+					break
+				}
 			}
 		}
 
