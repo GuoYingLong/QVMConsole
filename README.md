@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://images.xiaozhuhouses.asia/i/2026/06/06/sudbsi.png" alt="QVMConsole 封面" width="100%">
+![](https://images.xiaozhuhouses.asia/i/2026/06/06/sudbsi.png)
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/qvmconsole/qvmconsole?style=social)](https://github.com/qvmconsole/qvmconsole)
