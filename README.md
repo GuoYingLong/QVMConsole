@@ -10,9 +10,7 @@
 [![GitHub Issues](https://img.shields.io/github/issues/qvmconsole/qvmconsole)](https://github.com/qvmconsole/qvmconsole/issues)
 [![GitHub Pull Requests](https://img.shields.io/github/issues-pr/qvmconsole/qvmconsole)](https://github.com/qvmconsole/qvmconsole/pulls)
 
-**官方网站**: [https://www.qvmconsole.cn/](https://www.qvmconsole.cn/)  
-**文档站点**: [https://qvmcdocs.xiaozhuhouses.asia/](https://qvmcdocs.xiaozhuhouses.asia/)  
-**部署指南**: [https://qvmcdocs.xiaozhuhouses.asia/docs/install/](https://qvmcdocs.xiaozhuhouses.asia/docs/install/)
+[**官方网站**](https://www.qvmconsole.cn/) | [**文档站点**](https://qvmcdocs.xiaozhuhouses.asia/) | [**部署指南**](https://qvmcdocs.xiaozhuhouses.asia/docs/install/)
 
 </div>
 
