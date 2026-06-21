@@ -120,7 +120,12 @@ func SetFileImmutable(path string) error {
 
 // RemoveFileImmutable 移除文件的 Linux 不可变属性 (chattr -i)
 func RemoveFileImmutable(path string) error {
-	result := ExecCommand("chattr", "-i", path)
+	// 文件不存在时无需移除不可变属性，直接返回
+	if !FileExists(path) {
+		return nil
+	}
+	// 使用 Quiet 变体：chattr 可能因文件系统不支持等原因失败，不应打印 ERROR
+	result := ExecCommandQuiet("chattr", "-i", path)
 	if result.Error != nil {
 		// 如果文件已经不可变或 chattr 不可用，不视为错误
 		return nil

@@ -110,6 +110,8 @@ func PrepareTemplate(params *PrepareTemplateParams) error {
 		return err
 	}
 	_ = utils.ChownLibvirtQEMU(destPath)
+	// saveTemplateMeta 已将 meta.json 设为不可变，需先移除再 chown
+	_ = utils.RemoveFileImmutable(getMetaPath(destPath))
 	_ = utils.ChownLibvirtQEMU(getMetaPath(destPath))
 	// 设置模板文件为不可变，防止误删
 	_ = utils.SetFileImmutable(destPath)

@@ -670,6 +670,8 @@ func ImportTemplate(ctx context.Context, params *ImportTemplateParams, progressF
 			return nil, err
 		}
 		_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", targetPath)
+		// saveTemplateMeta 已将 meta.json 设为不可变，需先移除再 chown
+		_ = utils.RemoveFileImmutable(getMetaPath(targetPath))
 		_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", getMetaPath(targetPath))
 		// 设置模板文件为不可变，防止误删（模板只能通过模板管理接口删除）
 		_ = utils.SetFileImmutable(targetPath)
@@ -735,6 +737,8 @@ func importLegacySingleTemplate(ctx context.Context, params *ImportTemplateParam
 		return nil, err
 	}
 	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", targetPath)
+	// saveTemplateMeta 已将 meta.json 设为不可变，需先移除再 chown
+	_ = utils.RemoveFileImmutable(getMetaPath(targetPath))
 	_ = utils.ExecCommand("chown", "libvirt-qemu:kvm", getMetaPath(targetPath))
 	// 设置模板文件为不可变，防止误删
 	_ = utils.SetFileImmutable(targetPath)

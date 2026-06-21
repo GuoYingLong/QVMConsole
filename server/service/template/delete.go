@@ -520,7 +520,10 @@ func updatePromotedTemplateMeta(child TemplateInfo, parent TemplateInfo) error {
 	if err := saveTemplateMeta(child.Path, meta); err != nil {
 		return err
 	}
+	// saveTemplateMeta 已将 meta.json 设为不可变，需先移除再 chown
+	_ = utils.RemoveFileImmutable(getMetaPath(child.Path))
 	_ = utils.ChownLibvirtQEMU(getMetaPath(child.Path))
+	_ = utils.SetFileImmutable(getMetaPath(child.Path))
 	return nil
 }
 
