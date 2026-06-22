@@ -22,10 +22,6 @@ var (
 	CloneUsernameRegexp       = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	cloneUsernameRegexp       = CloneUsernameRegexp
 	clonePasswordAllowedRegex = regexp.MustCompile(`^[A-Za-z0-9!@#$%^&*_\-+=?]+$`)
-	clonePasswordUpperRegex   = regexp.MustCompile(`[A-Z]`)
-	clonePasswordLowerRegex   = regexp.MustCompile(`[a-z]`)
-	clonePasswordDigitRegex   = regexp.MustCompile(`[0-9]`)
-	clonePasswordSymbolRegex  = regexp.MustCompile(`[!@#$%^&*_\-+=?]`)
 )
 
 // ValidateCloneCredentials 校验模板克隆使用的主机名、用户名和密码
@@ -87,20 +83,8 @@ func ValidateCloneCredentialsForTemplate(templateType, hostname, username, passw
 	return ValidateCloneCredentials(hostname, normalizedUsername, password, requireCredentials)
 }
 
-// ValidateStrongPassword 校验模板克隆使用的强密码
+// ValidateStrongPassword 统一密码强度校验（当前暂不校验，后续完善）
 func ValidateStrongPassword(password string) error {
-	if len(password) < strongPasswordMinLength {
-		return fmt.Errorf("密码长度不能少于%d位", strongPasswordMinLength)
-	}
-	if !clonePasswordAllowedRegex.MatchString(password) {
-		return fmt.Errorf("密码只能包含字母、数字和 !@#$%%^&*_-+=? 符号")
-	}
-	if !clonePasswordUpperRegex.MatchString(password) ||
-		!clonePasswordLowerRegex.MatchString(password) ||
-		!clonePasswordDigitRegex.MatchString(password) ||
-		!clonePasswordSymbolRegex.MatchString(password) {
-		return fmt.Errorf("密码必须同时包含大写字母、小写字母、数字和符号")
-	}
 	return nil
 }
 

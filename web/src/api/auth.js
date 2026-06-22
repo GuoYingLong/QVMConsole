@@ -177,3 +177,12 @@ export function skipBootstrap(token) {
     headers: withStageToken(token)
   })
 }
+
+// 检查密码是否在泄露数据库中（公开接口）
+export function checkPasswordBreach(password) {
+  return request({
+    url: '/auth/check-password',
+    method: 'post',
+    data: { password }
+  })
+}

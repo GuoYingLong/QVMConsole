@@ -8,9 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 
+	"kvm_console/config"
 	"kvm_console/middleware"
 	"kvm_console/model"
 	"kvm_console/service"
+	securitypkg "kvm_console/service/security"
 )
 
 type LoginRequest struct {
@@ -96,6 +98,56 @@ type PasswordResetRequest struct {
 	Token           string `json:"token" binding:"required"`
 	Password        string `json:"password" binding:"required"`
 	ConfirmPassword string `json:"confirm_password" binding:"required"`
+}
+
+type CheckPasswordRequest struct {
+	Password string `json:"password" binding:"required"`
+}
+
+// CheckPasswordBreach 检查密码是否在泄露数据库中（公开接口，用于前端实时校验）
+func CheckPasswordBreach(c *gin.Context) {
+	var req CheckPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "message": "请输入密码"})
+		return
+	}
+
+	// 如果泄露检测开关已关闭，直接返回未泄露
+	if !config.GlobalConfig.PasswordBreachCheckEnabled {
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "ok",
+			"data": gin.H{
+				"enabled":  false,
+				"breached": false,
+			},
+		})
+		return
+	}
+
+	breached, fallback, err := securitypkg.CheckPasswordBreached(req.Password)
+	if err != nil && !fallback {
+		// API 不可用且本地也未匹配，不阻断用户操作
+		c.JSON(http.StatusOK, gin.H{
+			"code":    200,
+			"message": "ok",
+			"data": gin.H{
+				"enabled":  true,
+				"breached": false,
+				"warning":  "泄露密码检测服务暂时不可用，已跳过在线检测",
+			},
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code":    200,
+		"message": "ok",
+		"data": gin.H{
+			"enabled":  true,
+			"breached": breached,
+		},
+	})
 }
 
 // Login 用户登录

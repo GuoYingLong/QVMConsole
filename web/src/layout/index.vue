@@ -411,7 +411,7 @@
                 v-model="passwordForm.newPassword"
                 type="password"
                 show-password
-                placeholder="请输入新密码（至少12位，包含大小写字母、数字和符号）"
+                placeholder="请输入新密码（至少12位）"
               />
             </el-form-item>
             <el-form-item label="确认密码" prop="confirmPassword">
@@ -494,6 +494,7 @@ import {
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { copyTextWithFallback } from '@/utils/clipboard'
 import { siteTitle } from '@/utils/site'
+import { passwordValidator, checkPasswordBreachAsync } from '@/utils/validate'
 
 // 导入近期任务面板组件
 import RecentTaskPanel from '@/components/RecentTaskPanel.vue'
@@ -706,16 +707,7 @@ const passwordRules = {
           callback(new Error('请输入新密码'))
           return
         }
-        if (value.length < 12) {
-          callback(new Error('密码长度不能少于12位'))
-          return
-        }
-        const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*_\-+=?])[A-Za-z0-9!@#$%^&*_\-+=?]+$/
-        if (!passwordPattern.test(value)) {
-          callback(new Error('密码必须包含大小写字母、数字和符号'))
-          return
-        }
-        callback()
+        passwordValidator(rule, value, callback)
       },
       trigger: 'blur'
     }
@@ -757,6 +749,13 @@ const usernameRules = {
 const submitPasswordChange = async () => {
   const valid = await passwordFormRef.value.validate().catch(() => false)
   if (!valid) return
+
+  // 异步泄露密码检测（HIBP API）
+  const breach = await checkPasswordBreachAsync(passwordForm.newPassword)
+  if (breach.enabled && breach.breached) {
+    ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
+    return
+  }
 
   passwordLoading.value = true
   try {

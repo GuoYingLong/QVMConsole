@@ -209,3 +209,17 @@ sudo apt install -y genisoimage
 ```
 
 **说明：** 此工具在 Windows 克隆/重装时被调用，用于生成包含 `meta_data.json`（主机名、管理员密码、instance-id）的 config-2 标签 ISO，挂载到虚拟机 CD-ROM 后由 CloudbaseInit 读取完成初始化。该工具已由 `install.sh` 自动安装。
+
+## 泄露密码检测服务
+
+### Have I Been Pwned (HIBP) Pwned Passwords API
+
+**用途：** 检查用户设置的密码是否在已知数据泄露事件中被暴露（110亿+条记录）
+
+**调用方式：** 后端通过 HTTPS 调用 `https://api.pwnedpasswords.com/range/` API，采用 k-匿名性模型——仅发送密码 SHA-1 哈希的前 5 位字符，后缀在本地比对，**密码本身永不离开本机**
+
+**网络要求：** 需要外网访问能力。当网络不可用时自动回退到内置常见弱密码列表（约 500 条高频弱密码）
+
+**开关：** 系统设置 → 安全防护 → 泄露密码检测（默认开启，关闭后跳过所有密码校验）
+
+**缓存：** API 响应结果在内存中缓存 30 分钟，避免重复请求

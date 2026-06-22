@@ -50,13 +50,13 @@
 
         <el-form :model="form" label-width="100px" style="margin-top: 20px;">
           <el-form-item label="密码">
-            <el-input v-model="form.password" type="password" show-password placeholder="请输入强密码" />
+            <el-input v-model="form.password" type="password" show-password placeholder="请输入密码（至少12位）" />
           </el-form-item>
           <el-form-item label="确认密码">
             <el-input v-model="form.confirm_password" type="password" show-password placeholder="请再次输入密码" />
           </el-form-item>
           <div class="password-tip">
-            密码至少 12 位，且必须包含大写字母、小写字母、数字和符号。
+            密码至少 12 位。
           </div>
           <el-form-item>
             <el-button type="primary" :loading="submitting" @click="handleSubmit">完成注册</el-button>
@@ -74,6 +74,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { completeInvite, getInviteInfo } from '@/api/auth'
 import { useUserStore } from '@/store/user'
+import { validatePassword, checkPasswordBreachAsync } from '@/utils/validate'
 
 const route = useRoute()
 const router = useRouter()
@@ -114,6 +115,18 @@ const fetchDetail = async () => {
 const handleSubmit = async () => {
   if (!form.password || !form.confirm_password) {
     ElMessage.warning('请完整填写密码信息')
+    return
+  }
+  // 本地常见弱密码检测
+  const check = validatePassword(form.password)
+  if (!check.valid) {
+    ElMessage.error(check.message)
+    return
+  }
+  // 异步泄露密码检测（HIBP API）
+  const breach = await checkPasswordBreachAsync(form.password)
+  if (breach.enabled && breach.breached) {
+    ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
     return
   }
   submitting.value = true

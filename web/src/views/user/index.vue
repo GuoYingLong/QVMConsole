@@ -763,6 +763,7 @@ import { Search, Warning } from '@element-plus/icons-vue'
 import QuotaForm from '@/components/QuotaForm.vue'
 import VmForm from '@/components/VmForm.vue'
 import { useUserStore } from '@/store/user'
+import { passwordValidator, checkPasswordBreachAsync } from '@/utils/validate'
 
 const userStore = useUserStore()
 
@@ -807,10 +808,7 @@ const smtpNotConfiguredRules = {
     {
       validator: (rule, value, callback) => {
         if (!value) { callback(new Error('请输入初始密码')); return }
-        if (value.length < 12) { callback(new Error('密码长度不能少于12位')); return }
-        const pattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*_\-+=?])[A-Za-z0-9!@#$%^&*_\-+=?]+$/
-        if (!pattern.test(value)) { callback(new Error('密码必须包含大小写字母、数字和符号')); return }
-        callback()
+        passwordValidator(rule, value, callback)
       },
       trigger: 'blur'
     }
@@ -1161,6 +1159,14 @@ const submitCreate = async () => {
         }
         if (form.lightweight_vm_source === 'existing' && !form.lightweight_existing_vms.length) {
           ElMessage.warning('请至少选择一台已有 VM')
+          return
+        }
+      }
+      // SMTP 未配置时需要密码，进行泄露检测
+      if (!smtpConfigured && form.password) {
+        const breach = await checkPasswordBreachAsync(form.password)
+        if (breach.enabled && breach.breached) {
+          ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
           return
         }
       }

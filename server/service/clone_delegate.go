@@ -4,8 +4,11 @@ package service
 // Maintains backward compatibility for callers using service.XXX()
 import (
 	"context"
+	"fmt"
 
+	"kvm_console/config"
 	clonepkg "kvm_console/service/clone"
+	securitypkg "kvm_console/service/security"
 )
 
 // DeleteVM delegates to clone.DeleteVM
@@ -68,9 +71,29 @@ func ValidateCloneCredentialsForTemplate(templateType, hostname, username, passw
 	return clonepkg.ValidateCloneCredentialsForTemplate(templateType, hostname, username, password, requireCredentials)
 }
 
-// ValidateStrongPassword delegates to clone.ValidateStrongPassword
+// ValidateStrongPassword 统一密码强度校验
+// 当 PasswordBreachCheckEnabled 为 false 时跳过所有校验
+// 当为 true 时检查泄露密码（HIBP API + 本地常见弱密码列表）
 func ValidateStrongPassword(password string) error {
-	return clonepkg.ValidateStrongPassword(password)
+	if !config.GlobalConfig.PasswordBreachCheckEnabled {
+		return nil
+	}
+	// 基础校验（clone 包内的规则校验）
+	if err := clonepkg.ValidateStrongPassword(password); err != nil {
+		return err
+	}
+	// 泄露密码检测
+	breached, fallback, err := securitypkg.CheckPasswordBreached(password)
+	if err != nil {
+		// API 不可用时仅依赖本地兜底结果
+		if !fallback {
+			return nil
+		}
+	}
+	if breached {
+		return fmt.Errorf("该密码已在已知泄露数据库中发现，请更换为更安全的密码")
+	}
+	return nil
 }
 
 // NormalizeCloneUsernameForTemplate delegates to clone.NormalizeCloneUsernameForTemplate

@@ -68,7 +68,7 @@
           </template>
         </el-input>
         <div class="form-inline-hint">
-          至少 12 位，需包含大写字母、小写字母、数字和符号（支持 !@#$%^&*_-+=?）。
+          {{ passwordHint }}
         </div>
       </el-form-item>
       <el-form-item v-if="isFnOSTemplate" label="FnOS 设备 ID">
@@ -94,6 +94,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getTemplateList, reinstallVm } from '@/api/vm'
+import { passwordValidator, checkPasswordBreachAsync, generatePassword as genPwd, STRONG_PASSWORD_MIN_LENGTH, PASSWORD_ALLOWED_PATTERN } from '@/utils/validate'
 
 const visible = ref(false)
 const submitting = ref(false)
@@ -104,11 +105,6 @@ const formRef = ref(null)
 
 const windowsTemplateUsername = 'administrator'
 const usernamePattern = /^[a-z_][a-z0-9_-]{0,31}$/
-const passwordAllowedPattern = /^[A-Za-z0-9!@#$%^&*_\-+=?]+$/
-const hasUppercasePattern = /[A-Z]/
-const hasLowercasePattern = /[a-z]/
-const hasDigitPattern = /[0-9]/
-const hasSymbolPattern = /[!@#$%^&*_\-+=?]/
 const fnosDeviceIdPattern = /^[0-9a-fA-F]{32}([0-9a-fA-F]{8})?$/
 
 const form = reactive({
@@ -129,6 +125,7 @@ const templateMinDiskSize = computed(() => resolveTemplateMinDiskSize(selectedTe
 const showCredentialFields = computed(() => ['linux', 'windows', 'fnos'].includes(selectedTemplateType.value))
 const isFnOSTemplate = computed(() => selectedTemplateType.value === 'fnos')
 const isWindowsTemplate = computed(() => selectedTemplateType.value === 'windows')
+const passwordHint = computed(() => `至少 ${STRONG_PASSWORD_MIN_LENGTH} 位（支持 !@#$%^&*_-+=?）`)
 
 const rules = {
   template: [{ required: true, message: '请选择模板', trigger: 'change' }],
@@ -191,15 +188,7 @@ const rules = {
         callback(new Error('请输入登录密码'))
         return
       }
-      if (normalized.length < 12) {
-        callback(new Error('密码长度不能少于 12 位'))
-        return
-      }
-      if (!passwordAllowedPattern.test(normalized) || !hasUppercasePattern.test(normalized) || !hasLowercasePattern.test(normalized) || !hasDigitPattern.test(normalized) || !hasSymbolPattern.test(normalized)) {
-        callback(new Error('密码必须包含大小写字母、数字和符号'))
-        return
-      }
-      callback()
+      passwordValidator(_rule, normalized, callback)
     },
     trigger: 'blur'
   }],
@@ -255,29 +244,6 @@ function resolveTemplateMinDiskSize(template) {
   return 0
 }
 
-function randomFromCharset(charset, length) {
-  const chars = charset.split('')
-  const randomValues = new Uint32Array(length)
-  window.crypto.getRandomValues(randomValues)
-  return randomValues.reduce((result, value) => result + chars[value % chars.length], '')
-}
-
-function buildStrongPassword() {
-  const uppercase = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const lowercase = 'abcdefghijkmnopqrstuvwxyz'
-  const digits = '23456789'
-  const symbols = '!@#$%^&*_-+=?'
-  const all = uppercase + lowercase + digits + symbols
-  const fixed = [
-    randomFromCharset(uppercase, 1),
-    randomFromCharset(lowercase, 1),
-    randomFromCharset(digits, 1),
-    randomFromCharset(symbols, 1)
-  ]
-  const rest = randomFromCharset(all, 12)
-  return [...fixed.join('').concat(rest)].sort(() => Math.random() - 0.5).join('')
-}
-
 async function fetchTemplates() {
   templateLoading.value = true
   try {
@@ -320,7 +286,7 @@ function handleTemplateChange() {
 }
 
 function generatePassword() {
-  form.password = buildStrongPassword()
+  form.password = genPwd()
   formRef.value?.validateField('password').catch(() => false)
 }
 
@@ -331,6 +297,14 @@ async function submitReinstall() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) {
     return
+  }
+  // 异步泄露密码检测（HIBP API）
+  if (form.password) {
+    const breach = await checkPasswordBreachAsync(form.password)
+    if (breach.enabled && breach.breached) {
+      ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
+      return
+    }
   }
   submitting.value = true
   try {

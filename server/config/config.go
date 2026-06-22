@@ -165,6 +165,8 @@ type Config struct {
 	ErrorDetailInResponse bool `json:"error_detail_in_response"`
 	// 会话指纹绑定开关（默认开启）
 	SessionFingerprintEnabled bool `json:"session_fingerprint_enabled"`
+	// 泄露密码检测开关（默认开启，关闭后跳过所有密码校验）
+	PasswordBreachCheckEnabled bool `json:"password_breach_check_enabled"`
 }
 
 // GlobalConfig 全局配置实例
@@ -290,6 +292,7 @@ func Init() {
 		APIMaxBodySizeMB:                      getEnvInt("KVM_API_MAX_BODY_SIZE_MB", 2),
 		ErrorDetailInResponse:                 getEnvBool("KVM_ERROR_DETAIL_IN_RESPONSE", false),
 		SessionFingerprintEnabled:             getEnvBool("KVM_SESSION_FINGERPRINT_ENABLED", true),
+		PasswordBreachCheckEnabled:            getEnvBool("KVM_PASSWORD_BREACH_CHECK_ENABLED", true),
 		CORSAllowedOrigins:                    getEnv("KVM_CORS_ALLOWED_ORIGINS", ""),
 	}
 	// 解析可信代理列表
@@ -803,6 +806,8 @@ func (c *Config) LoadFromDB(settings map[string]string) {
 			c.SessionFingerprintEnabled = value != "false"
 		case "request_filter_enabled":
 			c.RequestFilterEnabled = value != "false"
+		case "password_breach_check_enabled":
+			c.PasswordBreachCheckEnabled = value != "false"
 		case "api_max_body_size_mb":
 			if n, err := strconv.Atoi(value); err == nil && n > 0 {
 				c.APIMaxBodySizeMB = n
@@ -884,6 +889,7 @@ func (c *Config) ToSettingsMap() map[string]string {
 		"network_wait_online_disabled":              strconv.FormatBool(c.NetworkWaitOnlineDisabled),
 		"session_fingerprint_enabled":               strconv.FormatBool(c.SessionFingerprintEnabled),
 		"request_filter_enabled":                    strconv.FormatBool(c.RequestFilterEnabled),
+		"password_breach_check_enabled":             strconv.FormatBool(c.PasswordBreachCheckEnabled),
 	}
 }
 

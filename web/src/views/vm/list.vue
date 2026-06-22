@@ -1032,7 +1032,7 @@
               v-model="registrationCredentialForm.password"
               type="password"
               show-password
-              placeholder="至少 12 位，包含大小写字母、数字和特殊字符"
+              placeholder="至少 12 位，支持字母、数字和符号"
             >
               <template #append>
                 <el-button @click="generateRegistrationPassword">随机强密码</el-button>
@@ -1065,6 +1065,7 @@ import SnapshotManage from '@/components/SnapshotManage.vue'
 import NetworkManage from '@/components/NetworkManage.vue'
 import TemplateForm from '@/components/TemplateForm.vue'
 import VmDeleteDialog from '@/components/VmDeleteDialog.vue'
+import { validatePassword, checkPasswordBreachAsync, generatePassword as genPwd } from '@/utils/validate'
 import VmMigrationDialog from '@/components/VmMigrationDialog.vue'
 import VmReinstallDialog from '@/components/VmReinstallDialog.vue'
 import VmStatusIcons from '@/components/icons/VmStatusIcons.vue'
@@ -1386,23 +1387,10 @@ const formatMemory = (memory) => {
 }
 
 const validateRegistrationPassword = (password) => {
-  if (!password || password.length < 12) return false
-  return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[!@#$%^&*_\-+=?]/.test(password)
+  return validatePassword(password).valid
 }
 
-const generateStrongPassword = () => {
-  const lower = 'abcdefghijkmnopqrstuvwxyz'
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const digits = '23456789'
-  const symbols = '!@#$%^&*_-+=?'
-  const all = lower + upper + digits + symbols
-  const pick = (chars) => chars[Math.floor(Math.random() * chars.length)]
-  const chars = [pick(lower), pick(upper), pick(digits), pick(symbols)]
-  while (chars.length < 16) {
-    chars.push(pick(all))
-  }
-  return chars.sort(() => Math.random() - 0.5).join('')
-}
+const generateStrongPassword = () => genPwd()
 
 const generateRegistrationPassword = () => {
   registrationCredentialForm.value.password = generateStrongPassword()
@@ -1442,7 +1430,13 @@ const submitRegistrationConfirm = async () => {
     return
   }
   if (!validateRegistrationPassword(registrationCredentialForm.value.password)) {
-    ElMessage.warning('密码至少 12 位，并包含大小写字母、数字和特殊字符')
+    ElMessage.warning('密码至少 12 位，只支持字母、数字和 !@#$%^&*_-+=? 符号')
+    return
+  }
+  // 异步泄露密码检测（HIBP API）
+  const breach = await checkPasswordBreachAsync(registrationCredentialForm.value.password)
+  if (breach.enabled && breach.breached) {
+    ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
     return
   }
   registrationConfirmLoading.value = true

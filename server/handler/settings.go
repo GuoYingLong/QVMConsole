@@ -88,6 +88,7 @@ type SettingsResponse struct {
 	// 安全防护
 	SessionFingerprintEnabled bool `json:"session_fingerprint_enabled"`
 	RequestFilterEnabled      bool `json:"request_filter_enabled"`
+	PasswordBreachCheckEnabled bool `json:"password_breach_check_enabled"`
 }
 
 // UpdateSettingsRequest 更新设置请求
@@ -152,6 +153,7 @@ type UpdateSettingsRequest struct {
 	// 安全防护
 	SessionFingerprintEnabled *bool `json:"session_fingerprint_enabled"`
 	RequestFilterEnabled      *bool `json:"request_filter_enabled"`
+	PasswordBreachCheckEnabled *bool `json:"password_breach_check_enabled"`
 }
 
 type TestSMTPRequest struct {
@@ -167,7 +169,8 @@ type TestSMTPRequest struct {
 }
 
 type PublicSettingsResponse struct {
-	SiteTitle string `json:"site_title"`
+	SiteTitle                string `json:"site_title"`
+	PasswordBreachCheckEnabled bool  `json:"password_breach_check_enabled"`
 }
 
 // GetPublicSettings 获取公开系统设置
@@ -180,7 +183,8 @@ func GetPublicSettings(c *gin.Context) {
 		"code":    200,
 		"message": "ok",
 		"data": PublicSettingsResponse{
-			SiteTitle: siteTitle,
+			SiteTitle:                 siteTitle,
+			PasswordBreachCheckEnabled: config.GlobalConfig.PasswordBreachCheckEnabled,
 		},
 	})
 }
@@ -261,6 +265,7 @@ func GetSettings(c *gin.Context) {
 			NetworkWaitOnlineSummary:              networkWaitOnlineSummary(cfg.NetworkWaitOnlineDisabled),
 			SessionFingerprintEnabled:             cfg.SessionFingerprintEnabled,
 			RequestFilterEnabled:                  cfg.RequestFilterEnabled,
+			PasswordBreachCheckEnabled:            cfg.PasswordBreachCheckEnabled,
 		},
 	})
 }
@@ -562,6 +567,9 @@ func UpdateSettings(c *gin.Context) {
 	}
 	if req.RequestFilterEnabled != nil {
 		cfg.RequestFilterEnabled = *req.RequestFilterEnabled
+	}
+	if req.PasswordBreachCheckEnabled != nil {
+		cfg.PasswordBreachCheckEnabled = *req.PasswordBreachCheckEnabled
 	}
 
 	if cfg.AutoPortStart >= cfg.AutoPortEnd {

@@ -96,6 +96,11 @@ export const endpointGroups = [
         body: 'JSON: token, password, confirm_password',
         response: '密码重置成功提示。'
       }),
+      ep('POST', '/auth/check-password', '检查密码是否在泄露数据库中', {
+        auth: publicAuth,
+        body: 'JSON: password',
+        response: 'data: enabled(泄露检测是否开启), breached(是否泄露), warning(可选,检测服务不可用时的提示)。采用 HIBP k-匿名性模型，密码哈希不离开本机。'
+      }),
       ep('POST', '/auth/login/email/send', '登录阶段发送邮箱验证码', {
         auth: jwtOnly,
         body: '无',

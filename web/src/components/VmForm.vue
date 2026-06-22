@@ -2392,6 +2392,7 @@ import { Top, Bottom, Delete, Plus, ArrowRight, Discount } from '@element-plus/i
 import FormIcons from '@/components/icons/FormIcons.vue'
 import { useUserStore } from '@/store/user'
 import { templateCategoryLabel, templateGroupLabel, WINDOWS_TEMPLATE_CATEGORY_OPTIONS, LINUX_TEMPLATE_CATEGORY_OPTIONS } from '@/utils/templateCategory'
+import { passwordValidator, checkPasswordBreachAsync, generatePassword as generateStrongPwd, STRONG_PASSWORD_MIN_LENGTH, PASSWORD_ALLOWED_PATTERN } from '@/utils/validate'
 
 const userStore = useUserStore()
 const isAdmin = computed(() => userStore.role === 'admin')
@@ -2564,8 +2565,6 @@ const shouldShowAdvancedIntro = computed(() => isAdvancedSectionActive.value && 
 
 const templateHostnamePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/
 const templateUsernamePattern = /^[a-z_][a-z0-9_-]{0,31}$/
-const allowedPasswordPattern = /^[A-Za-z0-9!@#$%^&*_\-+=?]+$/
-const strongPasswordMinLength = 12
 const parseTemplateDiskSizeGB = (virtualSize) => {
   if (!virtualSize || typeof virtualSize !== 'string') {
     return 0
@@ -2671,7 +2670,7 @@ const templateUserTip = computed(() => {
   return '仅支持小写字母、数字、下划线和短横线，且需以字母或下划线开头'
 })
 const templatePasswordTip = computed(() => {
-  const baseTip = '至少 12 位，需包含大写字母、小写字母、数字和符号（支持 !@#$%^&*_-+=?）'
+  const baseTip = `至少 ${STRONG_PASSWORD_MIN_LENGTH} 位（支持 !@#$%^&*_-+=?）`
   if (isFnOSTemplate.value) {
     return `fnOS 会将该密码作为首次管理员网页登录密码；${baseTip}`
   }
@@ -2685,10 +2684,6 @@ const shouldPreserveFnOSDeviceID = computed(() => {
 })
 const vmNameCharset = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const hostnameCharset = 'abcdefghijklmnopqrstuvwxyz0123456789'
-const uppercaseCharset = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-const lowercaseCharset = 'abcdefghijkmnopqrstuvwxyz'
-const digitCharset = '23456789'
-const symbolCharset = '!@#$%^&*_-+=?'
 const fnosDeviceIdPattern = /^[0-9a-fA-F]{32}([0-9a-fA-F]{8})?$/
 const createEmptyGuestAgentConfig = () => ({
   enabled: true,
@@ -3053,28 +3048,12 @@ const randomCharFrom = (charset) => charset[getRandomInt(charset.length)]
 
 const randomStringFrom = (charset, length) => Array.from({ length }, () => randomCharFrom(charset)).join('')
 
-const shuffleChars = (chars) => {
-  for (let index = chars.length - 1; index > 0; index--) {
-    const swapIndex = getRandomInt(index + 1)
-    ;[chars[index], chars[swapIndex]] = [chars[swapIndex], chars[index]]
-  }
-  return chars
-}
-
 const generateRandomVmName = () => `vm${randomStringFrom(vmNameCharset, 8)}`
 const generateRandomHostname = () => `vm-${randomStringFrom(hostnameCharset, 8)}`
 
-const generateStrongPassword = () => {
-  const passwordChars = [
-    randomCharFrom(uppercaseCharset),
-    randomCharFrom(lowercaseCharset),
-    randomCharFrom(digitCharset),
-  ]
-  const baseCharset = uppercaseCharset + lowercaseCharset + digitCharset
-  while (passwordChars.length < strongPasswordMinLength - 1) {
-    passwordChars.push(randomCharFrom(baseCharset))
-  }
-  return `${shuffleChars(passwordChars).join('')}${randomCharFrom(symbolCharset)}`
+const handleGenerateTemplatePassword = async () => {
+  form.import_password = generateStrongPwd()
+  await formRef.value?.validateField('import_password').catch(() => false)
 }
 
 const validateTemplateHostname = (_, value, callback) => {
@@ -3131,19 +3110,7 @@ const validateTemplatePassword = (_, value, callback) => {
     callback(new Error('请输入密码'))
     return
   }
-  if (value.length < strongPasswordMinLength) {
-    callback(new Error(`密码长度不能少于 ${strongPasswordMinLength} 位`))
-    return
-  }
-  if (!allowedPasswordPattern.test(value)) {
-    callback(new Error('密码只能包含字母、数字和 !@#$%^&*_-+=? 符号'))
-    return
-  }
-  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value) || !/[!@#$%^&*_\-+=?]/.test(value)) {
-    callback(new Error('密码必须同时包含大写字母、小写字母、数字和符号'))
-    return
-  }
-  callback()
+  passwordValidator(_, value, callback)
 }
 
 const handleGenerateTemplateHostname = async () => {
@@ -3154,11 +3121,6 @@ const handleGenerateTemplateHostname = async () => {
 const handleGenerateVmName = async () => {
   form.name = generateRandomVmName()
   await formRef.value?.validateField('name').catch(() => false)
-}
-
-const handleGenerateTemplatePassword = async () => {
-  form.import_password = generateStrongPassword()
-  await formRef.value?.validateField('import_password').catch(() => false)
 }
 
 const resolveTemplateBootTypeForForm = (tpl) => {
@@ -4835,6 +4797,14 @@ const submitForm = async () => {
   const nicsPayload = buildAllNicsPayload()
   await formRef.value.validate(async (valid) => {
     if (valid) {
+      // 异步泄露密码检测（HIBP API）
+      if (form.import_password) {
+        const breach = await checkPasswordBreachAsync(form.import_password)
+        if (breach.enabled && breach.breached) {
+          ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
+          return
+        }
+      }
       loading.value = true
       try {
         if (isEdit.value) {

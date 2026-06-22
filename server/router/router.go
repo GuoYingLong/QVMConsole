@@ -60,6 +60,7 @@ func Setup() *gin.Engine {
 			auth.POST("/password/forgot/verify-code", handler.ForgotPasswordVerifyCode)
 			auth.POST("/password/forgot/select-account", handler.ForgotPasswordSelectAccount)
 			auth.POST("/password/reset", handler.ResetPasswordByEmail)
+			auth.POST("/check-password", handler.CheckPasswordBreach)
 		}
 
 		// ==================== 登录中间态验证 ====================

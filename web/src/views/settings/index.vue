@@ -809,6 +809,14 @@
           </div>
         </el-form-item>
 
+        <el-form-item label="泄露密码检测">
+          <el-switch v-model="form.password_breach_check_enabled" />
+          <div class="form-tip">
+            <el-icon><InfoFilled /></el-icon>
+            开启后，用户设置密码时将比对 Have I Been Pwned 泄露密码数据库（110亿+条记录，采用 k-匿名性模型，密码哈希不离开本机）及内置常见弱密码列表，命中则阻止。关闭后跳过所有密码校验
+          </div>
+        </el-form-item>
+
         <el-divider content-position="left">
           <el-icon style="margin-right: 4px;"><Warning /></el-icon>
           JWT 密钥管理
@@ -1217,6 +1225,7 @@ const form = reactive({
   development_mode: false,
   session_fingerprint_enabled: true,
   request_filter_enabled: true,
+  password_breach_check_enabled: true,
   maintenance_mode: false,
   maintenance_service_units: defaultMaintenanceServiceUnits,
   maintenance_vm_shutdown_timeout_seconds: 40,
@@ -1679,6 +1688,7 @@ const buildPayload = () => ({
   development_mode: form.development_mode,
   session_fingerprint_enabled: form.session_fingerprint_enabled,
   request_filter_enabled: form.request_filter_enabled,
+  password_breach_check_enabled: form.password_breach_check_enabled,
   maintenance_mode: form.maintenance_mode,
   maintenance_service_units: form.maintenance_service_units?.trim() || defaultMaintenanceServiceUnits,
   maintenance_vm_shutdown_timeout_seconds: form.maintenance_vm_shutdown_timeout_seconds,

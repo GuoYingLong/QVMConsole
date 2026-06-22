@@ -4,6 +4,9 @@ import { getPublicSettings } from '@/api/settings'
 export const DEFAULT_SITE_TITLE = 'QVMConsole'
 const SITE_TITLE_STORAGE_KEY = 'site_title'
 
+// 泄露密码检测开关（默认开启）
+export const passwordBreachCheckEnabled = ref(true)
+
 function normalizeSiteTitle(value) {
   const normalized = String(value || '').trim()
   return normalized || DEFAULT_SITE_TITLE
@@ -50,7 +53,12 @@ export function applyDocumentTitle(pageTitle = '') {
 export async function syncPublicSiteTitle() {
   try {
     const res = await getPublicSettings()
-    return setSiteTitle(res.data?.site_title)
+    setSiteTitle(res.data?.site_title)
+    // 同步泄露密码检测开关
+    if (res.data?.password_breach_check_enabled !== undefined) {
+      passwordBreachCheckEnabled.value = res.data.password_breach_check_enabled !== false
+    }
+    return getSiteTitle()
   } catch {
     return getSiteTitle()
   }

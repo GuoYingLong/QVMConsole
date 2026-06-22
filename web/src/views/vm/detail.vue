@@ -712,6 +712,7 @@ import VmForm from '@/components/VmForm.vue'
 import VmRemarkDialog from '@/components/VmRemarkDialog.vue'
 import VmReinstallDialog from '@/components/VmReinstallDialog.vue'
 import VmStatusIcons from '@/components/icons/VmStatusIcons.vue'
+import { passwordValidator, checkPasswordBreachAsync, generatePassword as genPwd, STRONG_PASSWORD_MIN_LENGTH } from '@/utils/validate'
 import { useVmStore } from '@/store/vm'
 import { useUserStore } from '@/store/user'
 import { copyTextWithFallback } from '@/utils/clipboard'
@@ -863,9 +864,8 @@ const resetPasswordSubmitting = ref(false)
 const resetPasswordFormRef = ref(null)
 const showBackToTop = ref(false)
 
-const strongPasswordMinLength = 12
+const strongPasswordMinLength = STRONG_PASSWORD_MIN_LENGTH
 const usernamePattern = /^[a-z_][a-z0-9_-]{0,31}$/
-const passwordAllowedPattern = /^[A-Za-z0-9!@#$%^&*_\-+=?]+$/
 const windowsUsernameInvalidPattern = /["/\\[\]:;|=,+*?<>]/
 
 const vmInfo = reactive({
@@ -1061,41 +1061,6 @@ const statusTagType = (status) => {
   return map[status] || 'info'
 }
 
-const randomCharFrom = (charset) => {
-  const bytes = new Uint32Array(1)
-  window.crypto.getRandomValues(bytes)
-  return charset[bytes[0] % charset.length]
-}
-
-const shuffleChars = (chars) => {
-  const result = [...chars]
-  for (let i = result.length - 1; i > 0; i -= 1) {
-    const bytes = new Uint32Array(1)
-    window.crypto.getRandomValues(bytes)
-    const j = bytes[0] % (i + 1)
-    ;[result[i], result[j]] = [result[j], result[i]]
-  }
-  return result
-}
-
-const generateStrongPassword = () => {
-  const upperCharset = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
-  const lowerCharset = 'abcdefghijkmnopqrstuvwxyz'
-  const digitCharset = '23456789'
-  const symbolCharset = '!@#$%^&*_-+=?'
-  const baseCharset = `${upperCharset}${lowerCharset}${digitCharset}${symbolCharset}`
-  const passwordChars = [
-    randomCharFrom(upperCharset),
-    randomCharFrom(lowerCharset),
-    randomCharFrom(digitCharset),
-    randomCharFrom(symbolCharset)
-  ]
-  while (passwordChars.length < strongPasswordMinLength) {
-    passwordChars.push(randomCharFrom(baseCharset))
-  }
-  return shuffleChars(passwordChars).join('')
-}
-
 const validateResetUsername = (_, value, callback) => {
   if (!value) {
     callback(new Error('请输入要重置的用户名'))
@@ -1130,19 +1095,7 @@ const validateResetPassword = (_, value, callback) => {
     callback(new Error('请输入新密码'))
     return
   }
-  if (value.length < strongPasswordMinLength) {
-    callback(new Error(`密码长度不能少于 ${strongPasswordMinLength} 位`))
-    return
-  }
-  if (!passwordAllowedPattern.test(value)) {
-    callback(new Error('密码只能包含字母、数字和 !@#$%^&*_-+=? 符号'))
-    return
-  }
-  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value) || !/[!@#$%^&*_\-+=?]/.test(value)) {
-    callback(new Error('密码必须同时包含大写字母、小写字母、数字和符号'))
-    return
-  }
-  callback()
+  passwordValidator(_, value, callback)
 }
 
 const resetPasswordRules = {
@@ -1160,12 +1113,12 @@ const openResetPasswordDialog = () => {
     return
   }
   resetPasswordForm.username = vmInfo.credential?.username || (vmInfo.os_type === 'windows' ? 'administrator' : '')
-  resetPasswordForm.password = vmInfo.credential?.password || generateStrongPassword()
+  resetPasswordForm.password = vmInfo.credential?.password || genPwd()
   resetPasswordDialogVisible.value = true
 }
 
 const handleGenerateResetPassword = async () => {
-  resetPasswordForm.password = generateStrongPassword()
+  resetPasswordForm.password = genPwd()
   await resetPasswordFormRef.value?.validateField('password').catch(() => false)
 }
 
@@ -1185,6 +1138,12 @@ const copyCredentialField = async (value, fieldName) => {
 const submitResetPassword = async () => {
   const valid = await resetPasswordFormRef.value?.validate().catch(() => false)
   if (!valid) return
+  // 异步泄露密码检测（HIBP API）
+  const breach = await checkPasswordBreachAsync(resetPasswordForm.password)
+  if (breach.enabled && breach.breached) {
+    ElMessage.error('该密码已在已知泄露数据库中发现，请更换为更安全的密码')
+    return
+  }
   resetPasswordSubmitting.value = true
   try {
     const res = await resetVmLinuxPassword(vmName.value, {
