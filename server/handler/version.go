@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"kvm_console/config"
+	"kvm_console/service/arch"
 )
 
 // GetVersion 返回系统版本信息
@@ -36,7 +37,7 @@ func GetPublicSystemInfo(c *gin.Context) {
 			"go_version":    runtime.Version(),
 			"os":            runtime.GOOS,
 			"distro":        getDistroName(),
-			"arch":          runtime.GOARCH,
+			"arch":          arch.GetHostArchDisplayName(),
 			"num_cpu":       runtime.NumCPU(),
 			"hostname":      hostname,
 			"num_goroutine": runtime.NumGoroutine(),

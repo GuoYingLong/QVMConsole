@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"kvm_console/logger"
+	"kvm_console/service/arch"
 	"kvm_console/service/libvirt_rpc"
 	"kvm_console/utils"
 )
@@ -266,6 +267,9 @@ func GetHostStats() (*HostStats, error) {
 	if hostnameResult.Error == nil {
 		stats.Hostname = strings.TrimSpace(hostnameResult.Stdout)
 	}
+
+	// 宿主机架构
+	stats.Arch = arch.GetHostArchDisplayName()
 
 	// 运行时间
 	uptimeResult := utils.ExecShell(`uptime -p`)

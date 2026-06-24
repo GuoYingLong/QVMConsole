@@ -144,6 +144,7 @@ type HostStats struct {
 	DiskWrBytes     int64   `json:"disk_wr_bytes"`
 	Hostname        string  `json:"hostname"`
 	Uptime          string  `json:"uptime"`
+	Arch            string  `json:"arch"` // 宿主机架构
 	VMRunning       int     `json:"vm_running"`
 	VMTotal         int     `json:"vm_total"`
 	KSMPagesShared  int64   `json:"ksm_pages_shared"`

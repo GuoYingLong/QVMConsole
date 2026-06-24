@@ -303,7 +303,7 @@ const adminOverviewCards = computed(() => {
   const cards = [
     { label: '物理核数', value: `${d.cpu_count || 0} 核`, sub: d.hostname || '', icon: Cpu, color: '#409EFF' },
     { label: '运行中实例', value: `${d.vm_running || 0} / ${d.vm_total || 0}`, sub: '运行 / 总数', icon: Monitor, color: '#67C23A' },
-    { label: '运行时间', value: d.uptime || '-', sub: d.hostname || '', icon: Timer, color: '#9C6ADE' },
+    { label: '运行时间', value: d.uptime || '-', sub: (d.arch || '') + (d.arch && d.hostname ? ' · ' : '') + (d.hostname || ''), icon: Timer, color: '#9C6ADE' },
   ]
   if ((d.ksm_pages_sharing || 0) > 0) {
     const ksmGB = ((d.ksm_pages_sharing || 0) * 4096 / 1024 / 1024 / 1024).toFixed(1)
