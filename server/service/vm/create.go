@@ -44,7 +44,7 @@ type CreateVMParams struct {
 	BootType        string                         `json:"boot_type,omitempty"`
 	Watchdog        string                         `json:"watchdog,omitempty"`
 	BootOrder       []string                       `json:"boot_order,omitempty"`
-	VideoModel      string                         `json:"video_model,omitempty"` // 视频模型: virtio/vga/vmvga/cirrus
+	VideoModel      string                         `json:"video_model,omitempty"` // 视频模型: virtio/vga/vmvga/cirrus/ramfb
 	CPUTopologyMode string                         `json:"cpu_topology_mode,omitempty"`
 	CPULimitPercent int                            `json:"cpu_limit_percent,omitempty"`
 	CPUAffinity     string                         `json:"cpu_affinity,omitempty"` // CPU 亲和性，如 "0,2,4"，空字符串表示不设置

@@ -2609,7 +2609,7 @@ const resolveTemplateDefaultNicModel = (tpl) => {
 }
 const resolveTemplateDefaultVideoModel = (tpl) => {
   const videoModel = String(resolveTemplateDefaultConfig(tpl)?.video_model || '').trim().toLowerCase()
-  return ['virtio', 'vga', 'vmvga', 'cirrus'].includes(videoModel) ? videoModel : ''
+  return ['virtio', 'vga', 'vmvga', 'cirrus', 'ramfb'].includes(videoModel) ? videoModel : ''
 }
 const resolveTemplateDefaultCPUTopologyMode = (tpl) => {
   const mode = String(resolveTemplateDefaultConfig(tpl)?.cpu_topology_mode || '').trim().toLowerCase()
@@ -3560,6 +3560,7 @@ const allBootDevices = [
 
 const videoModelOptions = [
   { value: 'virtio', label: 'VirtIO（高性能）', tag: '推荐', tagType: 'success' },
+  { value: 'ramfb', label: 'ramfb（ARM 兼容）', tag: 'ARM', tagType: 'danger' },
   { value: 'vga', label: 'VGA（兼容模式）', tag: '兼容', tagType: 'warning' },
   { value: 'vmvga', label: 'VMVGA（VMware 嵌套）', tag: '嵌套', tagType: 'primary' },
   { value: 'cirrus', label: 'Cirrus（保守排障）', tag: '排障', tagType: 'info' }

@@ -71,6 +71,7 @@
           <el-form-item label="显示设备">
             <el-select v-model="form.video_model" style="width: 100%;">
               <el-option label="VirtIO（高性能）" value="virtio" />
+              <el-option label="ramfb（ARM 兼容）" value="ramfb" />
               <el-option label="VGA（兼容模式）" value="vga" />
               <el-option label="VMVGA（VMware 嵌套）" value="vmvga" />
               <el-option label="Cirrus（排障）" value="cirrus" />
