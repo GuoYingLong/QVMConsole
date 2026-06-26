@@ -307,9 +307,11 @@ func parseBootDevices(xmlStr string, bootOrder []string) []BootDevice {
 	typePositions := make(map[string]int)
 
 	// 解析磁盘设备，同时记录每个设备的 address unit
-	diskRe := regexp.MustCompile(`(?s)<disk type='[^']*' device='([^']*)'>(.*?)</disk>`)
+	// 注意：disk 标签可能包含 model 等额外属性（如 ARM USB CDROM 的 model='usb-bot'），
+	// 使用 [^>]* 而非严格属性顺序来匹配，确保兼容不同架构。
+	diskRe := regexp.MustCompile(`(?s)<disk\b[^>]*\bdevice='([^']*)'[^>]*>(.*?)</disk>`)
 	sourceFileRe := regexp.MustCompile(`<source file='([^']*)'`)
-	targetRe := regexp.MustCompile(`<target dev='([^']*)' bus='([^']*)'`)
+	targetRe := regexp.MustCompile(`<target\b[^>]*\bdev='([^']*)'[^>]*\bbus='([^']*)'`)
 	addrUnitRe := regexp.MustCompile(`<address\s+[^>]*\bunit=['"](\d+)['"]`)
 
 	// 临时存储 unit，用于后期排序
@@ -399,8 +401,8 @@ func parseBootDevices(xmlStr string, bootOrder []string) []BootDevice {
 	}
 
 	// 解析网络接口
-	ifRe := regexp.MustCompile(`(?s)<interface type='[^']*'>(.*?)</interface>`)
-	macRe := regexp.MustCompile(`<mac address='([^']*)'`)
+	ifRe := regexp.MustCompile(`(?s)<interface\b[^>]*\btype='[^']*'[^>]*>(.*?)</interface>`)
+	macRe := regexp.MustCompile(`<mac\b[^>]*\baddress='([^']*)'`)
 
 	ifMatches := ifRe.FindAllStringSubmatch(xmlStr, -1)
 	for _, m := range ifMatches {
