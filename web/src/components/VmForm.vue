@@ -3695,6 +3695,52 @@ const buildDeviceOrderFromDevices = () => {
   return order
 }
 
+// ==================== 编辑模式字段快照 ====================
+// 为避免后端对未变化字段执行无谓的 virsh XML 读写操作，编辑保存时只发送发生变化的字段。
+// 此快照在表单详情加载完成、磁盘列表加载完成后分别记录，保存时逐字段对比。
+const editOrigFormSnapshot = ref(null)   // 表单可编辑字段原始值快照
+const editOrigDiskIopsSnapshot = ref({}) // 磁盘 IOPS 原始值快照（按设备名索引）
+
+// 记录表单可编辑字段的原始值快照（在 applyEditVmDetail 填充完表单后调用）
+const captureEditFormSnapshot = () => {
+  editOrigFormSnapshot.value = {
+    vcpu: form.vcpu,
+    max_vcpu: cpuHotplugMaxVCPU.value,
+    memory: form.memory,
+    autostart: form.autostart,
+    freeze: form.freeze,
+    apic: !!form.apic,
+    pae: !!form.pae,
+    rtc_offset: form.rtc_offset,
+    rtc_startdate: normalizeRTCStartDate(form.rtc_startdate),
+    guest_agent: JSON.stringify(buildGuestAgentPayload()),
+    smbios1: JSON.stringify(buildSMBIOS1Payload()),
+    boot_order: JSON.stringify(editBootDevices.value.length > 0 ? buildBootOrderFromDevices() : form.boot_order),
+    device_order: JSON.stringify(editBootDevices.value.length > 0 ? buildDeviceOrderFromDevices() : []),
+    cpu_topology_mode: form.cpu_topology_mode || '',
+    video_model: form.video_model || '',
+    cpu_limit_percent: buildCPULimitPercentPayload(),
+    cpu_affinity: isAdmin.value ? (form.cpu_affinity || '').trim() : null,
+  }
+}
+
+// 记录磁盘 IOPS 原始值快照（在 refreshEditDisks 加载完磁盘后调用）
+const captureEditDiskIopsSnapshot = () => {
+  const snap = {}
+  if (isAdmin.value) {
+    editDisks.value.forEach(disk => {
+      if (disk.device) {
+        snap[disk.device] = {
+          total_iops_sec: disk.iops_total?.value || 0,
+          read_iops_sec: disk.iops_read?.value || 0,
+          write_iops_sec: disk.iops_write?.value || 0,
+        }
+      }
+    })
+  }
+  editOrigDiskIopsSnapshot.value = snap
+}
+
 // 验证规则
 const createRules = computed(() => {
   const base = {
@@ -4255,6 +4301,8 @@ const applyEditVmDetail = (detail, row = {}) => {
     form.host_devices = []
     form.host_devices_touched = false
   }
+  // 表单字段已填充完毕，记录原始值快照用于保存时检测变化
+  captureEditFormSnapshot()
 }
 
 const reloadEditVmDetail = async (row = currentEditRow.value || {}) => {
@@ -4490,6 +4538,8 @@ const refreshEditDisks = async () => {
     editCdroms.value = cdroms
     editFloppys.value = floppys
     editDisks.value = normalDisks
+    // 磁盘列表已加载，记录 IOPS 原始值快照
+    captureEditDiskIopsSnapshot()
   } catch {}
 }
 
@@ -4837,6 +4887,8 @@ const onClosed = () => {
   currentEditRow.value = null
   editOrigBootType.value = ''
   editOrigPCIERootPorts.value = 0
+  editOrigFormSnapshot.value = null
+  editOrigDiskIopsSnapshot.value = {}
   registrationMode.value = false
   registrationContext.dedicated_vpc_switch_id = 0
   registrationContext.dedicated_vpc_label = ''
@@ -4870,22 +4922,55 @@ const submitForm = async () => {
           const computedDeviceOrder = editBootDevices.value.length > 0
             ? buildDeviceOrderFromDevices()
             : []
+          // 仅发送发生变化的字段，避免后端对未变化字段执行无谓的 virsh XML 读写操作
           const editPayload = {
-            vcpu: form.vcpu,
-            max_vcpu: cpuHotplugMaxVCPU.value,
-            memory: form.memory,
-            autostart: form.autostart,
-            freeze: form.freeze,
-            start_after_import: form.start_after_import,
-            apic: !!form.apic,
-            pae: !!form.pae,
-            rtc_offset: form.rtc_offset,
-            rtc_startdate: normalizeRTCStartDate(form.rtc_startdate),
-            guest_agent: buildGuestAgentPayload(),
-            smbios1: buildSMBIOS1Payload(),
-            boot_order: computedBootOrder,
-            device_order: computedDeviceOrder,
             add_disks: form.add_disks.filter(d => d.size > 0),
+          }
+          const snap = editOrigFormSnapshot.value || {}
+          // CPU / 最大 vCPU / 内存：仅变化时发送（后端 EditVMConfig 内部对 0 值会跳过对应修改）
+          if (form.vcpu !== snap.vcpu) {
+            editPayload.vcpu = form.vcpu
+          }
+          if (cpuHotplugMaxVCPU.value !== snap.max_vcpu) {
+            editPayload.max_vcpu = cpuHotplugMaxVCPU.value
+          }
+          if (form.memory !== snap.memory) {
+            editPayload.memory = form.memory
+          }
+          // 开机自启 / 启动冻结 / APIC / PAE：仅变化时发送
+          if (form.autostart !== snap.autostart) {
+            editPayload.autostart = form.autostart
+          }
+          if (form.freeze !== snap.freeze) {
+            editPayload.freeze = form.freeze
+          }
+          if (!!form.apic !== snap.apic) {
+            editPayload.apic = !!form.apic
+          }
+          if (!!form.pae !== snap.pae) {
+            editPayload.pae = !!form.pae
+          }
+          // RTC 配置：任一字段变化即一起发送
+          const curRtcStartdate = normalizeRTCStartDate(form.rtc_startdate)
+          if (form.rtc_offset !== snap.rtc_offset || curRtcStartdate !== snap.rtc_startdate) {
+            editPayload.rtc_offset = form.rtc_offset
+            editPayload.rtc_startdate = curRtcStartdate
+          }
+          // Guest Agent / SMBIOS：对象序列化对比
+          const curGuestAgent = buildGuestAgentPayload()
+          if (JSON.stringify(curGuestAgent) !== snap.guest_agent) {
+            editPayload.guest_agent = curGuestAgent
+          }
+          const curSmbios1 = buildSMBIOS1Payload()
+          if (JSON.stringify(curSmbios1) !== snap.smbios1) {
+            editPayload.smbios1 = curSmbios1
+          }
+          // 启动顺序 / 设备级排序：数组序列化对比
+          if (JSON.stringify(computedBootOrder) !== snap.boot_order) {
+            editPayload.boot_order = computedBootOrder
+          }
+          if (JSON.stringify(computedDeviceOrder) !== snap.device_order) {
+            editPayload.device_order = computedDeviceOrder
           }
           // PCIe 热插槽数量（仅当用户修改后发送）
           if (form.machine_type === 'q35' && form.pcie_root_ports !== editOrigPCIERootPorts.value) {
@@ -4895,15 +4980,21 @@ const submitForm = async () => {
           if (isAdmin.value && form.host_devices_touched) {
             editPayload.host_devices = form.host_devices
           }
-          // 收集 IOPS 设置（仅管理员）
+          // 磁盘 IOPS：仅发送发生变化的磁盘（仅管理员）
           if (isAdmin.value) {
             const diskIops = {}
+            const iopsSnap = editOrigDiskIopsSnapshot.value || {}
             editDisks.value.forEach(disk => {
-              if (disk.device && disk._iops_total !== undefined) {
+              if (!disk.device) return
+              const total = disk._iops_total !== undefined ? disk._iops_total : (disk.iops_total?.value || 0)
+              const read = disk._iops_read !== undefined ? disk._iops_read : (disk.iops_read?.value || 0)
+              const write = disk._iops_write !== undefined ? disk._iops_write : (disk.iops_write?.value || 0)
+              const orig = iopsSnap[disk.device] || { total_iops_sec: 0, read_iops_sec: 0, write_iops_sec: 0 }
+              if (total !== orig.total_iops_sec || read !== orig.read_iops_sec || write !== orig.write_iops_sec) {
                 diskIops[disk.device] = {
-                  total_iops_sec: disk._iops_total || 0,
-                  read_iops_sec: disk._iops_read || 0,
-                  write_iops_sec: disk._iops_write || 0
+                  total_iops_sec: total || 0,
+                  read_iops_sec: read || 0,
+                  write_iops_sec: write || 0
                 }
               }
             })
@@ -4911,14 +5002,20 @@ const submitForm = async () => {
               editPayload.disk_iops = diskIops
             }
           }
+          // CPU 限制百分比（仅管理员，仅变化时发送）
           const cpuLimitPercent = buildCPULimitPercentPayload()
-          if (cpuLimitPercent !== undefined) {
+          if (isAdmin.value && cpuLimitPercent !== snap.cpu_limit_percent) {
             editPayload.cpu_limit_percent = cpuLimitPercent
           }
+          // CPU 亲和性（仅管理员，仅变化时发送）
           if (isAdmin.value) {
-            editPayload.cpu_affinity = (form.cpu_affinity || '').trim()
+            const curAffinity = (form.cpu_affinity || '').trim()
+            if (curAffinity !== snap.cpu_affinity) {
+              editPayload.cpu_affinity = curAffinity
+            }
           }
-          if (form.cpu_topology_mode && editVmStatus.value !== 'running' && editVmStatus.value !== 'paused') {
+          // CPU 拓扑模式（仅关机时可改，仅变化时发送）
+          if (form.cpu_topology_mode && editVmStatus.value !== 'running' && editVmStatus.value !== 'paused' && form.cpu_topology_mode !== snap.cpu_topology_mode) {
             editPayload.cpu_topology_mode = form.cpu_topology_mode
           }
           // 只有网卡类型变化时才传递，避免运行中无谓报错
@@ -4928,7 +5025,8 @@ const submitForm = async () => {
           if (form.boot_type && form.boot_type !== editOrigBootType.value) {
             editPayload.boot_type = form.boot_type
           }
-          if (form.video_model && editVmStatus.value !== 'running' && editVmStatus.value !== 'paused') {
+          // 显示设备（仅关机时可改，仅变化时发送）
+          if (form.video_model && editVmStatus.value !== 'running' && editVmStatus.value !== 'paused' && form.video_model !== snap.video_model) {
             editPayload.video_model = form.video_model
           }
           const memoryPayload = buildMemoryDynamicPayload()
