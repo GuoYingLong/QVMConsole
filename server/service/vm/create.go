@@ -148,6 +148,41 @@ func ListISOs() ([]map[string]string, error) {
 	return isos, nil
 }
 
+// fixARM64CDROMBus 对于 aarch64 架构，将 virt-install 生成的 SATA CDROM 修正为 USB 总线。
+// ARM64 的 AAVMF UEFI 固件不支持从 SATA CDROM 引导，必须使用 USB CDROM。
+func fixARM64CDROMBus(vmXML string) string {
+	if !arch.IsHostArch(arch.ArchAarch64) {
+		return vmXML
+	}
+	// 将 CDROM 设备块的 bus='sata' 替换为 bus='usb'
+	lines := strings.Split(vmXML, "\n")
+	inCdrom := false
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "device='cdrom'") {
+			inCdrom = true
+		}
+		if inCdrom && strings.Contains(trimmed, "bus='sata'") {
+			lines[i] = strings.Replace(line, "bus='sata'", "bus='usb'", 1)
+		}
+		if inCdrom && strings.Contains(trimmed, "<address type='drive'") {
+			// 移除 SATA 控制器地址，USB 设备不需要此属性
+			lines[i] = ""
+		}
+		if inCdrom && (strings.Contains(trimmed, "</disk>") || strings.HasSuffix(trimmed, "</disk>")) {
+			inCdrom = false
+		}
+	}
+	// 过滤掉空行
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line != "" {
+			filtered = append(filtered, line)
+		}
+	}
+	return strings.Join(filtered, "\n")
+}
+
 // CreateVM 普通方式创建虚拟机（不通过模板）
 func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, error) {
 	params.ISOPath, params.ISOPaths = D.NormalizeInstallISOSelection(params.ISOPath, params.ISOPaths)
@@ -360,6 +395,10 @@ func CreateVM(params *CreateVMParams, progressFn func(int, string)) (string, err
 	if idx := strings.Index(xmlOutput, "<domain"); idx > 0 {
 		xmlOutput = xmlOutput[idx:]
 	}
+
+	// ARM64 架构：将 virt-install 生成的 SATA CDROM 修正为 USB 总线
+	// AAVMF UEFI 固件不支持从 SATA CDROM 引导
+	xmlOutput = fixARM64CDROMBus(xmlOutput)
 
 	// 注入 memballoon 配置（非 Windows 启用 freePageReporting）
 	enableFPR := params.OSType != "windows"

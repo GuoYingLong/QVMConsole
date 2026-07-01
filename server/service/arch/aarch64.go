@@ -15,6 +15,7 @@ func (p *aarch64Profile) DefaultBootType() string         { return "uefi" }
 func (p *aarch64Profile) SupportedBootTypes() []string    { return []string{"uefi"} }
 func (p *aarch64Profile) DefaultCPUMode() string          { return "host-passthrough" }
 func (p *aarch64Profile) SupportedDiskBus() []string      { return []string{"virtio", "scsi"} }
+func (p *aarch64Profile) GetCDROMBus() string             { return "usb" }
 func (p *aarch64Profile) SupportedNicModels() []string    { return []string{"virtio"} }
 func (p *aarch64Profile) SupportsBIOS() bool              { return false }
 func (p *aarch64Profile) SupportsSecureBoot() bool        { return false }

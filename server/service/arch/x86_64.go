@@ -13,6 +13,7 @@ func (p *x8664Profile) DefaultBootType() string         { return "bios" }
 func (p *x8664Profile) SupportedBootTypes() []string    { return []string{"bios", "uefi", "uefi-secure"} }
 func (p *x8664Profile) DefaultCPUMode() string          { return "host-passthrough" }
 func (p *x8664Profile) SupportedDiskBus() []string      { return []string{"virtio", "scsi", "sata", "ide"} }
+func (p *x8664Profile) GetCDROMBus() string             { return "sata" }
 func (p *x8664Profile) SupportedNicModels() []string    { return []string{"virtio", "e1000e", "rtl8139"} }
 func (p *x8664Profile) SupportsBIOS() bool              { return true }
 func (p *x8664Profile) SupportsSecureBoot() bool        { return true }
