@@ -116,6 +116,8 @@ type VmStats struct {
 	NetTxBytes  int64   `json:"net_tx_bytes"`
 	DiskRdBytes int64   `json:"disk_rd_bytes"`
 	DiskWrBytes int64   `json:"disk_wr_bytes"`
+	DiskRdOps   int64   `json:"disk_rd_ops"` // 磁盘累计读操作次数
+	DiskWrOps   int64   `json:"disk_wr_ops"` // 磁盘累计写操作次数
 }
 
 // VMListOptions 虚拟机列表查询选项

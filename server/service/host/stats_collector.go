@@ -11,8 +11,8 @@ import (
 	"kvm_console/logger"
 	"kvm_console/model"
 	"kvm_console/service/libvirt_rpc"
-	"kvm_console/utils"
 	vmpkg "kvm_console/service/vm"
+	"kvm_console/utils"
 )
 
 // ==================== 资源采集缓存 ====================
@@ -213,10 +213,12 @@ func collectVMStatsRPC(name string) (*vmpkg.VmStats, error) {
 		// 磁盘 I/O 统计（替代 virsh domblkstat）——只取第一个非 cdrom 磁盘
 		dev := extractFirstDiskTargetDevFromXML(xmlStr)
 		if dev != "" {
-			rdBytes, wrBytes, blkErr := libvirt_rpc.GetDomainBlockStatsRPC(name, dev)
+			rdReq, rdBytes, wrReq, wrBytes, blkErr := libvirt_rpc.GetDomainBlockStatsRPC(name, dev)
 			if blkErr == nil {
 				stats.DiskRdBytes = rdBytes
 				stats.DiskWrBytes = wrBytes
+				stats.DiskRdOps = rdReq
+				stats.DiskWrOps = wrReq
 			}
 		}
 	}
@@ -274,6 +276,8 @@ func persistStatsToDB() {
 			NetTxBytes:  stats.NetTxBytes,
 			DiskRdBytes: stats.DiskRdBytes,
 			DiskWrBytes: stats.DiskWrBytes,
+			DiskRdOps:   stats.DiskRdOps,
+			DiskWrOps:   stats.DiskWrOps,
 			RecordedAt:  now,
 		}
 		if err := model.DB.Create(&record).Error; err != nil {
