@@ -1446,7 +1446,7 @@ extract_tarball() {
     tar -xzf "$tarball_path" -C "$TMP_RELEASE_DIR"
 
     local found_bin
-    found_bin=$(find "$TMP_RELEASE_DIR" -maxdepth 3 -name "kvm-console" -type f -perm /111 2>/dev/null | head -1)
+    found_bin=$(find "$TMP_RELEASE_DIR" -maxdepth 3 -name "kvm-console" -type f -perm /111 2>/dev/null | sed -n '1p') || true
     if [ -z "$found_bin" ]; then
         error "发行包中未找到 kvm-console 可执行文件"
         exit 1
@@ -1551,7 +1551,7 @@ install_files() {
 
         # 检测宿主机 glibc 版本，自动选择最合适的二进制作为主程序
         local glibc_ver
-        glibc_ver=$(ldd --version 2>&1 | head -1 | sed 's/.* //')
+        glibc_ver=$(ldd --version 2>&1 | sed -n '1 s/.* //p') || true
         if [ -z "$glibc_ver" ] || ! echo "$glibc_ver" | grep -qE '^[0-9]+\.[0-9]+$'; then
             glibc_ver=$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}' || echo "0")
         fi
