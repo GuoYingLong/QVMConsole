@@ -41,3 +41,4 @@ release/
 docs-web
 tmp/
 .qoder/
+.claude/
