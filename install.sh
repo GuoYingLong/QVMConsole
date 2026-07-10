@@ -826,6 +826,44 @@ ensure_core_services() {
     success "核心服务检查完成"
 }
 
+# print_ovs_dep_info 输出当前系统检测到的 OVS 依赖信息
+print_ovs_dep_info() {
+    local os_id="${ID:-unknown}"
+    local os_pretty="${PRETTY_NAME:-$os_id}"
+    local ovs_pkg="openvswitch-switch"
+    local ovs_svc="openvswitch-switch"
+    local install_cmd=""
+
+    case "$PKG_MGR" in
+        apt)
+            ovs_pkg="openvswitch-switch"
+            ovs_svc="openvswitch-switch"
+            install_cmd="sudo apt install -y openvswitch-switch"
+            ;;
+        dnf)
+            ovs_pkg="openvswitch"
+            ovs_svc="openvswitch"
+            install_cmd="sudo dnf install -y openvswitch"
+            ;;
+        yum)
+            ovs_pkg="openvswitch"
+            ovs_svc="openvswitch"
+            install_cmd="sudo yum install -y openvswitch"
+            ;;
+    esac
+
+    info "──────────────────────────────────────────"
+    info "系统检测: ${os_pretty} (${PKG_MGR})"
+    info "OVS 包名: ${ovs_pkg}"
+    info "OVS 服务: ${ovs_svc}"
+    if command -v ovs-vsctl &>/dev/null; then
+        success "OVS 已安装 ($(ovs-vsctl --version 2>/dev/null | head -1))"
+    else
+        warn "OVS 未安装，安装命令: ${install_cmd}"
+    fi
+    info "──────────────────────────────────────────"
+}
+
 # configure_qemu_for_rpm 修复 openEuler/麒麟 上 QEMU 权限问题
 # openEuler 默认 QEMU 以 qemu 用户运行，需确保 qemu.conf 配置允许访问虚拟机文件
 configure_qemu_for_rpm() {
@@ -1335,6 +1373,7 @@ restart_ovs_dnsmasq_service() {
 
 setup_ovs_foundation() {
     info "准备 OVS 网络地基..."
+    print_ovs_dep_info
 
     # 内部子函数，任何失败只警告不中断安装
     _setup_ovs_inner || warn "OVS 网络地基配置部分失败，可在面板 OVS 诊断中执行修复"
