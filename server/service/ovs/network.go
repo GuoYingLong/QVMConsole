@@ -178,6 +178,9 @@ func EnsureOVSNetworkReady() error {
 	}
 	EnsureSystemdUnitEnabled(OVSDNSMasqUnit)
 	if IsSystemdUnitFailed(OVSDNSMasqUnit) || !IsSystemdUnitActive(OVSDNSMasqUnit) {
+		// 启动前释放端口，确保残留的 libvirt dnsmasq 已停止
+		utils.ExecShellQuiet(fmt.Sprintf("pkill -f 'dnsmasq.*%s' || true", OvsSubnetPrefix()))
+		time.Sleep(time.Second)
 		if result := utils.ExecCommand("systemctl", "start", OVSDNSMasqUnit); result.Error != nil {
 			return fmt.Errorf("启动 OVS DHCP 服务失败: %s", result.Stderr)
 		}
@@ -508,9 +511,12 @@ Wants=network-online.target openvswitch-switch.service
 Type=forking
 PIDFile=/run/kvm-console-ovs-dnsmasq.pid
 ExecStartPre=/bin/bash /etc/kvm-console/ovs/prepare-bridge.sh
+ExecStartPre=/bin/bash -c 'pkill -f "dnsmasq.` + OvsSubnetPrefix() + `" 2>/dev/null || true'
+ExecStartPre=/bin/sleep 1
 ExecStart=/usr/sbin/dnsmasq --conf-file=/etc/kvm-console/ovs/dnsmasq.conf
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
