@@ -178,8 +178,8 @@ func EnsureOVSNetworkReady() error {
 	}
 	EnsureSystemdUnitEnabled(OVSDNSMasqUnit)
 	if IsSystemdUnitFailed(OVSDNSMasqUnit) || !IsSystemdUnitActive(OVSDNSMasqUnit) {
-		// 启动前释放端口，确保残留的 libvirt dnsmasq 已停止
-		utils.ExecShellQuiet(fmt.Sprintf("pkill -f 'dnsmasq.*%s' || true", OvsSubnetPrefix()))
+		// 启动前释放端口：只杀 libvirt default 网络的 dnsmasq（监听 192.168.122.1:53）
+		utils.ExecShellQuiet(fmt.Sprintf("ss -tlnp | grep '%s:53' | grep -oP 'pid=\\K[0-9]+' | xargs -r kill 2>/dev/null || true", OvsGatewayIP()))
 		time.Sleep(time.Second)
 		if result := utils.ExecCommand("systemctl", "start", OVSDNSMasqUnit); result.Error != nil {
 			return fmt.Errorf("启动 OVS DHCP 服务失败: %s", result.Stderr)
@@ -486,6 +486,12 @@ ip link set "$BRIDGE" up
 if ! ip -4 addr show dev "$BRIDGE" | grep -q "$GATEWAY"; then
   ip addr flush dev "$BRIDGE"
   ip addr add "$GATEWAY" dev "$BRIDGE"
+fi
+# 释放端口：只杀 libvirt default 网络的 dnsmasq（监听 192.168.122.1:53），不杀 OVS dnsmasq
+LIBVIRT_DNSMASQ_PID=$(ss -tlnp | grep '192.168.122.1:53' | grep -oP 'pid=\K[0-9]+' | head -1)
+if [ -n "$LIBVIRT_DNSMASQ_PID" ]; then
+  kill "$LIBVIRT_DNSMASQ_PID" 2>/dev/null || true
+  sleep 0.5
 fi
 for rule in "udp 67" "udp 53" "tcp 53"; do
   proto="${rule%% *}"
