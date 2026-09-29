@@ -24,7 +24,7 @@ ENV_FILE="${INSTALL_DIR}/.env"
 INSTALL_LAUNCH_DIR="$PWD"
 COMPATIBILITY_CHECK_SCRIPT="check-system-compatibility.sh"
 # 首次安装兼容性脚本下载地址，发布前填入正式地址。
-COMPATIBILITY_CHECK_URL="https://download.xiaozhuhouses.asia/download/v1/links/qhnoBKgQhgqxdXFxnZIW95hjerBS3L7HBUAo0GNg8Do"
+COMPATIBILITY_CHECK_URL="https://download.xiaozhuhouses.asia/d/52658a0b1f2a7a83f9328f10d5d31b1d/check-system-compatibility.sh"
 COMPATIBILITY_REPORT_DIR="${INSTALL_DIR}/logs/compatibility"
 COMPATIBILITY_SCRIPT_PATH=""
 COMPATIBILITY_DOWNLOAD_TMP=""
@@ -34,8 +34,8 @@ COMPATIBILITY_FAILURE_STAGE=""
 COMPATIBILITY_CHECK_STATUS=0
 COMPATIBILITY_INTERRUPTED=0
 # 开源版官方下载源（按架构区分）
-DOWNLOAD_URL_AMD64="https://download.xiaozhuhouses.asia/download/v1/links/YsxWkWgFPiZFrc8I0r2F8SpdLbhBA_O7PMnD0TDS0wM"
-DOWNLOAD_URL_ARM64="https://download.xiaozhuhouses.asia/download/v1/links/SSr8OGj6KLbxHHKK746R_-CvpoFj1Skh9XIkjkNNzZ0"
+DOWNLOAD_URL_AMD64="https://download.xiaozhuhouses.asia/d/ac535e8983f1754620bacde7593bc068/kvm-console-linux-amd64.tar.gz"
+DOWNLOAD_URL_ARM64="https://download.xiaozhuhouses.asia/d/81635f794eeebfb65bcba309808d860e/kvm-console-linux-arm64.tar.gz"
 
 STORAGE_IMG="/var/lib/kvm-user-storage.img"
 STORAGE_MOUNT="/var/lib/kvm-user-storage"
